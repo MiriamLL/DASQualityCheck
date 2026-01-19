@@ -68,8 +68,8 @@ Observations<-read_excel(path=paste0(ThisDirectory,'\\',ThisFile),sheet="Observa
 Corrections<-'No manual corrections were needed'
 ```
 
-If the Excel sheet contains mistakes in column errors please correct. See examples in QualityCheck_option1. 
-If the Excel sheet contains initial explanatory rows, they can be removed. See examples in QualityCheck_option2. 
+If the Excel sheet contains mistakes in column names please correct. See in example 1.
+If the Excel sheet contains initial explanatory rows, remove using [-(1:7),]. See example 2.
 
 # ~~~~~~~~~~~
 # Formal Check
