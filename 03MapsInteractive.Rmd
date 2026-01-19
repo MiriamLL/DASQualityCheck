@@ -1,0 +1,598 @@
+---
+title: "Separated Maps"
+author: "Marine Vertebrate Monitoring"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_document
+params:
+  ThisDirectory: ThisDirectory
+  ThisFile: ThisFile
+  BasisDaten: BasisDaten
+  Observations: Observations
+  
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+# Intro
+
+Using data from **`r params$ThisFile`** excel file.  
+This document presents two maps:
+
+- The first map shows the Survey Observations and base positions.
+
+- The second map displays the sightings.
+
+Please note that rendering may take some time due to the large number of points. Thank you for your patience.  ⏳
+
+```{r Packages, echo=FALSE, warnings=FALSE}
+library(sf)
+library(tmap)
+library(ggplot2)
+library(tidyverse)
+library(fontawesome)
+```
+
+## Position accuracy
+
+Basis position and Observations positions are plotted on the map.<br> 
+
+Once the map has loaded, temporary **unselect** the layer BP (Basis Points).<br>  
+Then, zoom into your area of interest using the blue dots as a reference.<br> 
+After zooming, re-enable the BP layer.<br> 
+This saves rendering time.<br> 
+
+Points shown in  <span style="color: #ff595e;">red</span> represent data from **Basis**, based on their longitude and latitude.<br>
+Points shown in <span style="color: #1982c4;"> blue</span>represent data from **Observations**, based on their longitude and latitude. <br> 
+
+You can interact with the map using the following controls:<br> 
+Using `r fa("plus", fill = 'black')` **zoom-in** to examine points in detail.<br> 
+Using `r fa("minus", fill = 'black')` **zoom-out** for a broader view.<br>  
+Using `r fa("layer-group", fill = 'black')` toogle **layers** on and off.<br>  
+Hover over a blue dot with the cursor `r fa("mouse-pointer", fill = 'black')` When the icon changes to `r fa("hand-point-up", fill = 'black')`, click it to view the position ID and species information.<br> 
+
+
+```{r Parameters, include=FALSE, echo=FALSE, eval=TRUE}
+Maps_BasisDaten<-params$BasisDaten
+Maps_Observations<-params$Observations
+```
+
+```{r Manual, echo=FALSE, eval=FALSE}
+Maps_BasisDaten<-BasisDaten
+Maps_Observations<-Observations
+```
+
+```{r BasisLayer, echo=FALSE}
+BasisDaten_df<-Maps_BasisDaten
+BasisDaten_df$lat<-as.numeric(BasisDaten_df$LAT_PIC_CENTER)
+BasisDaten_df$lon<-as.numeric(BasisDaten_df$LON_PIC_CENTER)
+BasisDaten_df <- BasisDaten_df[!is.na(BasisDaten_df$lat) & !is.na(BasisDaten_df$lon), ] 
+BasisDaten_sf <- st_as_sf(BasisDaten_df, coords = c("lon", "lat"),crs = 4326, agr = "constant")
+```
+
+```{r ObservationsLayer, echo=FALSE}
+Observations_df<-Maps_Observations
+Observations_df$lat<-as.numeric(Observations_df$LAT_OBJECT)
+Observations_df$lon<-as.numeric(Observations_df$LON_OBJECT)
+Observations_df <- Observations_df[!is.na(Observations_df$lat) & !is.na(Observations_df$lon), ] 
+Observations_sf <- st_as_sf(Observations_df, coords = c("lon", "lat"),crs = 4326, agr = "constant")
+```
+
+```{r DisplayedInformation, echo=FALSE, eval=TRUE}
+# check that columns exist
+if (all(c("POSITION_ID", "CAMERA_NUMBER") %in% colnames(BasisDaten_sf))) {
+  BasisDaten_positions<-BasisDaten_sf[,c("POSITION_ID","CAMERA_NUMBER")]
+#check if position id exist
+  } else {
+  if ("POSITION_ID" %in% colnames(BasisDaten_positions) && any(!is.na(BasisDaten_positions$POSITION_ID))) {
+  cat("POSITION_ID in BasisDaten exists and is not empty.\n")
+} else {
+  cat("POSITION_ID in BasisDaten is missing or empty.. Please check if there was a problem during the import to R.\n")
+}
+#check if camera number exists
+  if ("CAMERA_NUMBER" %in% colnames(BasisDaten_positions) && any(!is.na(BasisDaten_positions$CAMERA_NUMBER))) {
+  cat("CAMERA_NUMBER in BasisDaten exists and is not empty.\n")
+} else {
+  cat("CAMERA_NUMBER in BasisDaten is missing or empty. Please check if there was a problem during the import to R.\n")
+}
+}
+```
+
+```{r DisplayedInformationObservations, echo=FALSE, eval=TRUE}
+#check that columns exist
+if ("OBSERVATION_ID" %in% colnames(Observations_sf)){
+  Observations_positions<-Observations_sf[,c("OBSERVATION_ID","ENGLISH_NAME")]
+}else if ("Observation_ID" %in% colnames(Observations_sf)){
+#rename if different name
+Observations_sf <- Observations_sf %>%
+  rename(OBSERVATION_ID = Observation_ID)
+Observations_positions<-Observations_sf[,c("OBSERVATION_ID","ENGLISH_NAME")]
+} else {
+#if column doesnt exist show error
+  cat("A column named Observation_ID or OBSERVATION_ID is missing. Please include")
+}
+```
+
+```{r View, echo=FALSE, include=FALSE, eval=TRUE}
+tmap_mode("view") #interactive tmap_mode("view")
+```
+
+```{r BasisMap, echo=FALSE, include=TRUE, warning=FALSE, message=FALSE, eval=TRUE}
+tm_shape(BasisDaten_positions) + 
+  tm_symbols(shape= 1,
+             fill = "red", 
+             size = 0.5,
+             popup.vars=c("Position_ID"="POSITION_ID","Camera"="CAMERA_NUMBER"))+
+  tm_shape(Observations_positions) + 
+  tm_symbols(shape= 1,
+             fill = "blue", 
+             size = 0.5,
+          popup.vars=c("Observation_ID"="OBSERVATION_ID","Species"="ENGLISH_NAME"))+
+  tm_layout(legend.bg.color = 'white',  #Label background
+            legend.position = c(0.1,"bottom"),  #Label position
+            legend.frame = TRUE) #Label frame
+```
+
+## Sightings
+
+This map displays all **observations**, grouped by morphological/taxonomic category.
+
+You can interact with the map using the following controls:<br> 
+Using `r fa("layer-group", fill = 'black')` to toogle **morphological** groups on and off.<br> 
+Using `r fa("plus", fill = 'black')` to **zoom-in** and explore the points in more detail.<br>  
+Using `r fa("minus", fill = 'black')` to **zoom-out** for a broader view.<br> 
+Click on a point `r fa("mouse-pointer", fill = 'black')` to view the species information.<br> 
+
+```{r TaxGroup, include=FALSE, echo=FALSE, warnings=FALSE}
+Euring_Tax<-DASDescriptions::Code_Euring %>%
+  rename(ENGLISH_NAME=English_name)
+Observations_animals<- Observations_sf %>% filter (ENGLISH_NAME != "0")
+Observations_tax<-Observations_animals %>%
+  left_join(Euring_Tax,by='ENGLISH_NAME')
+Observations_tax<-Observations_tax %>%
+  rename(Morphological_group=Artificial_tax_class)
+```
+
+```{r CheckGroups, include=FALSE, echo=FALSE}
+Observations_tax %>%
+  group_by(Morphological_group) %>%
+  count(Morphological_group)
+```
+
+```{r LoadShapefiles, echo=FALSE, include=FALSE, eval=TRUE}
+Areas<-st_transform(DASShapefiles::DE_areas,4326)
+Land<- st_transform(DASShapefiles::DE_land,4326)
+SPA <- st_transform(DASShapefiles::DE_natura,4326)
+SCA<- st_transform(DASShapefiles::DE_SCA,4326)
+OWF<- st_transform(DASShapefiles::DE_OWF_status,4326)
+```
+
+```{r Base_map,echo=FALSE}
+Base_map<- tm_shape(Areas)+  
+  tm_polygons(col='#d62828', fill_alpha=0.1,lty = "solid")+
+  tm_shape(OWF)+  
+  tm_polygons(col='#f77f00', fill_alpha=0.1,lty = "dotted")+
+  tm_shape(SPA)+  
+  tm_polygons(col='#006d77', fill_alpha=0.1,lty = "dashed")+
+  tm_shape(SCA)+  
+  tm_polygons(col='#006d77', fill_alpha=0.1,lty = "dashed")
+```
+
+### Gulls
+
+```{r AddGulls, echo=FALSE}
+Add_gulls<-function(This_group=This_group){
+  Gulls_positions<-Observations_tax %>%
+      filter(Morphological_group == This_group)
+    if(nrow(Gulls_positions) == 0) {
+        print(paste("No",This_group,"occurred in the survey"))
+        } else {
+        print(paste(This_group,"will be included in the map"))
+        Gulls_map<-Base_map+
+           tm_shape(Gulls_positions) + 
+           tm_symbols(shape= 21,
+             fill = "#565aa0", 
+             size = 0.5,
+             popup.vars=c("Position_ID"="POSITION_ID","Species"="ENGLISH_NAME"))
+        Gulls_map
+  #assign('Base_map',Base_map,envir=globalenv())
+        }
+  }
+```
+
+```{r AssignGulls, echo=FALSE, comment=NA}
+Add_gulls(This_group='Gulls')
+```
+
+### Skuas
+
+```{r AddSkuas, echo=FALSE}
+Add_skuas<-function(This_group=This_group){
+  Skuas_positions<-Observations_tax %>%
+      filter(Morphological_group == This_group)
+    if(nrow(Skuas_positions) == 0) {
+        print(paste("No",This_group,"occurred in the survey"))
+        } else {
+         print(paste(This_group,"will be included in the map"))
+          Skuas_map<-Base_map+
+           tm_shape(Skuas_positions) + 
+            tm_symbols(shape=21,
+             fill = "#8ac926", 
+             size = 0.5,
+             popup.vars=c("Position_ID"="POSITION_ID","Species"="ENGLISH_NAME"))
+          Skuas_map
+  #assign('Base_map',Base_map,envir=globalenv())
+          }
+  }
+```
+
+```{r AssignSkuas, echo=FALSE, comment=NA}
+Add_skuas(This_group="Skuas")
+```
+
+### Gannets
+
+```{r AddGannets, echo=FALSE}
+Add_gannets <- function(This_group) {
+  Gannets_positions <- Observations_tax %>%
+    filter(Morphological_group == This_group)
+  if (nrow(Gannets_positions) == 0) {
+    print(paste("No", This_group, "occurred in the survey"))
+    } else {
+    print(paste(This_group, "will be included in the map"))
+      Gannets_map <- Base_map +
+        tm_shape(Gannets_positions) +
+        tm_symbols(shape = 21,
+                 fill = "#ff924c",
+                 size = 0.5,
+                 popup.vars = c("Position_ID" = "POSITION_ID", "Species" = "ENGLISH_NAME"))
+      Gannets_map
+    #assign('Base_map', Base_map, envir = globalenv())
+      }
+}
+```
+
+```{r AssignGannets, echo=FALSE, comment=NA}
+Add_gannets(This_group='Gannets_Swans')
+```
+### Auks
+
+```{r AddAuks, echo=FALSE}
+Add_auks<-function(This_group=This_group){
+  Auks_positions<-Observations_tax %>%
+    filter(Morphological_group == This_group)
+    if(nrow(Auks_positions) == 0) {
+        print(paste("No",This_group,"occurred in the survey"))
+        } else {
+         print(paste(This_group,"will be included in the map"))
+         Auks_map<-Base_map+
+           tm_shape(Auks_positions) + 
+           tm_symbols(shape=21,
+                       size = 0.5,  
+                       fill = "#36949d",
+                popup.vars=c("Position_ID"="POSITION_ID","Species"="ENGLISH_NAME"))
+    #assign('Base_map',Base_map,envir=globalenv())
+         Auks_map
+         }
+  }
+```
+
+```{r AssignAuks, echo=FALSE, comment=NA}
+Add_auks(This_group="Auks")
+```
+### Terns
+
+```{r AddTerns, echo=FALSE}
+Add_terns<-function(This_group=This_group){
+  Terns_positions<-Observations_tax %>%
+      filter(Morphological_group == This_group)
+    if(nrow(Terns_positions) == 0) {
+        print(paste("No",This_group,"occurred in the survey"))
+        } else {
+          print(paste(This_group,"will be included in the map"))
+         Terns_map<-Base_map+
+           tm_shape(Terns_positions) + 
+            tm_symbols(shape=21,
+                       size = 0.5,  
+                       fill ="#6a4c93",
+                      popup.vars=c("Position_ID"="POSITION_ID","Species"="ENGLISH_NAME"))
+         Terns_map
+  #assign('Base_map',Base_map,envir=globalenv())
+         }
+  }
+```
+
+```{r AssignTerns, echo=FALSE, comment=NA}
+Add_terns(This_group='Terns')
+```
+
+### Ducks
+
+```{r AddDucks, echo=FALSE}
+Add_ducks<-function(This_group=This_group){
+  DucksShelducks_positions<-Observations_tax %>%
+      filter(Morphological_group == This_group)
+    if(nrow(DucksShelducks_positions) == 0) {
+        print(paste("No",This_group,"occurred in the survey"))
+        } else {
+           print(paste(This_group,"will be included in the map"))
+         Ducks_map<-Base_map+
+           tm_shape(DucksShelducks_positions) + 
+            tm_symbols(shape=21,
+                       size = 0.5,  
+                       fill = "#ffca3a",
+                      popup.vars=c("Position_ID"="POSITION_ID","Species"="ENGLISH_NAME"))
+         Ducks_map
+  #assign('Base_map',Base_map,envir=globalenv())
+  }
+  }
+```
+
+```{r AssignDucks,  echo=FALSE, comment=NA}
+Add_ducks(This_group="Ducks_Shelducks")
+```
+
+### Geese
+
+```{r AddGeeseSwan,echo=FALSE}
+Add_geese<-function(This_group=This_group){
+  Geese_positions<-Observations_tax %>%
+      filter(Morphological_group == This_group)
+    if(nrow(Geese_positions) == 0) {
+        print(paste("No",This_group,"occurred in the survey"))
+        } else {
+        print(paste(This_group,"will be included in the map"))
+         Geese_map<-Base_map+
+           tm_shape(Geese_positions) + 
+            tm_symbols(shape=21,
+                       size = 0.5,  
+                       fill ="#c5ca30",
+                     popup.vars=c("Position_ID"="POSITION_ID","Species"="ENGLISH_NAME"))
+  #assign('Base_map',Base_map,envir=globalenv())
+         Geese_map
+  }
+  }
+```
+
+```{r AssignGesseSwan,  echo=FALSE, comment=NA}
+Add_geese(This_group="Geese")
+```
+
+### Divers
+
+```{r AddDivers, echo=FALSE}
+Add_divers<-function(This_group=This_group){
+ Divers_positions<-Observations_tax %>%
+      filter(Morphological_group == This_group)
+    if(nrow(Divers_positions) == 0) {
+        print(paste("No",This_group,"occurred in the survey"))
+        } else {
+           print(paste(This_group,"will be included in the map"))
+         Divers_map<-Base_map+
+           tm_shape(Divers_positions) + 
+            tm_symbols(shape=21,
+                       size = 0.5,  
+                       fill = "#ff595e",
+                      popup.vars=c("Position_ID"="POSITION_ID","Species"="ENGLISH_NAME"))
+         Divers_map
+  #assign('Base_map',Base_map,envir=globalenv())
+         }
+  }
+```
+
+```{r AssignDivers, echo=FALSE, comment=NA}
+Add_divers(This_group='Divers')
+```
+
+### Grebes
+
+```{r AddGrebes, echo=FALSE}
+Add_grebes<-function(This_group=This_group){
+  Grebes_positions<-Observations_tax %>%
+      filter(Morphological_group == This_group)
+    if(nrow(Grebes_positions) == 0) {
+        print(paste("No",This_group,"occurred in the survey"))
+        } else {
+         print(paste(This_group,"will be included in the map"))
+         Grebes_map<-Base_map+
+           tm_shape(Grebes_positions) + 
+            tm_symbols(shape=21,
+                       size = 0.5,  
+                       fill = "#1982c4",
+                       popup.vars=c("Position_ID"="POSITION_ID","Species"="ENGLISH_NAME"))
+         Grebes_map
+  #assign('Base_map',Base_map,envir=globalenv())
+  }
+  }
+```
+
+```{r AssignGrebes,  echo=FALSE, comment=NA}
+Add_grebes(This_group='Grebes')
+```
+
+### Cormorants
+
+```{r AddCormorants, echo=FALSE}
+Add_cormorants<-function(This_group=This_group){
+  Cormorants_positions<-Observations_tax %>%
+      filter(Morphological_group == This_group)
+    if(nrow(Cormorants_positions) == 0) {
+        print(paste("No",This_group,"occurred in the survey"))
+        } else {
+         print(paste(This_group,"will be included in the map"))
+         Cormorants_map<-Base_map+
+           tm_shape(Cormorants_positions) + 
+            tm_symbols(shape=21,
+                       size = 0.5,  
+                       fill = "#1982c4",
+                       popup.vars=c("Position_ID"="POSITION_ID","Species"="ENGLISH_NAME"))
+         Cormorants_map
+  #assign('Base_map',Base_map,envir=globalenv())
+  }
+  }
+```
+
+```{r AssignCormorants,  echo=FALSE, comment=NA}
+Add_cormorants(This_group='Cormorants')
+```
+
+### Waders
+
+```{r AddWaders, echo=FALSE}
+Add_waders<-function(This_group=This_group){
+  Waders_positions<-Observations_tax %>%
+      filter(Morphological_group == This_group)
+    if(nrow(Waders_positions) == 0) {
+        print(paste("No",This_group,"occurred in the survey"))
+        } else {
+         print(paste(This_group,"will be included in the map"))
+         Waders_map<-Base_map+
+           tm_shape(Waders_positions) + 
+             tm_symbols(shape=21,
+                       size = 0.5,  
+                       fill = "#4267ac",
+                        popup.vars=c("Position_ID"="POSITION_ID","Species"="ENGLISH_NAME"))
+         Waders_map
+  #assign('Base_map',Base_map,envir=globalenv())
+  }
+  }
+```
+
+```{r AssignWaders, echo=FALSE, comment=NA}
+Add_waders(This_group='Waders')
+```
+
+### Other seabirds
+
+```{r AddSeabirds, echo=FALSE}
+Add_seabirds<-function(This_group=This_group){
+  OtherSeabirds_positions<-Observations_tax %>%
+      filter(Morphological_group == This_group)
+    if(nrow(OtherSeabirds_positions) == 0) {
+        print(paste("No",This_group,"occurred in the survey"))
+        } else {
+         print(paste(This_group,"will be included in the map"))
+          Seabirds_map<-Base_map+
+           tm_shape(OtherSeabirds_positions) + 
+            tm_symbols(shape=21,
+                       size = 0.5,  
+                       fill = "#333533",
+                      popup.vars=c("Position_ID"="POSITION_ID","Species"="ENGLISH_NAME"))
+          Seabirds_map
+   #assign('Base_map',Base_map,envir=globalenv())
+   }
+  }
+```
+
+```{r AssingSeabirds,  echo=FALSE, comment=NA}
+Add_seabirds(This_group='Other_seabirds')
+```
+
+### Marine mammals
+
+```{r AddMammals, echo=FALSE}
+Add_mammals<-function(This_group=This_group){
+ MarineMammals_positions<-Observations_tax %>%
+     filter(Morphological_group == This_group)%>%
+   filter(OBSERVATION!=63510)
+    if(nrow(MarineMammals_positions) == 0) {
+        print(paste("No",This_group,"occurred in the survey"))
+        } else {
+          print(paste(This_group,"will be included in the map"))
+          Mammals_map<-Base_map+
+           tm_shape(MarineMammals_positions) + 
+           tm_symbols(shape=21,
+                       size = 0.5,  
+                       fill = "#a53860",
+                     popup.vars=c("Position_ID"="POSITION_ID","Species"="ENGLISH_NAME"))
+          Mammals_map
+  #assign('Base_map',Base_map,envir=globalenv())
+  }
+  }
+```
+
+```{r AssignMarineMammals,  echo=FALSE, comment=NA}
+Add_mammals(This_group="Marine_mammals")
+```
+
+### Harbour porpoise
+```{r AddHarbourPorpoise, echo=FALSE}
+HarbourPorpoise_positions<-Observations_tax %>% filter(OBSERVATION==63510) 
+if(nrow(HarbourPorpoise_positions) == 0) {
+        print(paste("No Harbour porpoise occurred in the survey"))
+        } else {
+          print(paste("Harbour Porpoise will be included in the map"))
+          Harbour_map<-Base_map+
+           tm_shape(HarbourPorpoise_positions) + 
+            tm_symbols(shape= 3,
+                       size = 0.5,  
+                       fill = "#3c6e71",
+                     popup.vars=c("Position_ID"="POSITION_ID","Species"="ENGLISH_NAME"))
+  assign('Harbour_map',Harbour_map,envir=globalenv())}
+```
+
+```{r AddHarbourPorpoiseAdults, echo=FALSE}
+HarbourPorpoise_adults<-Observations_tax %>% filter(OBSERVATION==63510)%>%filter(AGE_CLASS=='A')
+if(nrow(HarbourPorpoise_adults) == 0) {
+        print(paste("No Harbour porpoise occurred in the survey"))
+        } else {
+          print(paste("Harbour Porpoise Adults will be included in the map"))
+          Harbour_map<-Harbour_map+
+           tm_shape(HarbourPorpoise_adults) + 
+           tm_symbols(shape=21,
+                       size = 0.5,  
+                       fill ='#c1121f',
+                     popup.vars=c("Position_ID"="POSITION_ID","Species"="ENGLISH_NAME","Age_class"="AGE_CLASS"))
+  assign('Harbour_map',Harbour_map,envir=globalenv())}
+```
+
+```{r AddHarbourPorpoiseCalves, echo=FALSE}
+HarbourPorpoise_calves<-Observations_tax %>% filter(OBSERVATION==63510)%>%filter(AGE_CLASS=='IM')
+if(nrow(HarbourPorpoise_calves) == 0) {
+        print(paste("No Harbour porpoise calves occurred in the survey"))
+        } else {
+          print(paste("Harbour Porpoise calves will be included in the map"))
+          Harbour_map<-Harbour_map+
+           tm_shape(HarbourPorpoise_calves) + 
+           tm_symbols(shape= 24,
+                       size = 0.5,  
+                       fill = "#ffe100",
+                     popup.vars=c("Position_ID"="POSITION_ID","Species"="ENGLISH_NAME","Age_class"="AGE_CLASS"))
+  assign('Harbour_map',Harbour_map,envir=globalenv())}
+```
+
+```{r Observations_map, echo=FALSE, warnings=FALSE, message=FALSE, comment=FALSE}
+Harbour_map+
+  tm_layout(legend.bg.color = 'white',
+            legend.position = c(0.1,"bottom"), 
+            legend.frame = TRUE) 
+```
+
+### Other species
+
+```{r AddOthers, echo=FALSE}
+NotIncluded <- subset(Observations_tax, is.na(Morphological_group))
+Other_species <- subset(Observations_tax, Morphological_group == 'Other_species')
+MissingSpecies_positions<-rbind(NotIncluded,Other_species)
+
+if(nrow(MissingSpecies_positions) == 0) {
+        print(paste("No other species occurred in the survey"))
+        } else {
+        print(paste("Other species will be included in the map"))
+          Others_map<-Base_map+
+           tm_shape(MissingSpecies_positions) + 
+           tm_symbols(shape=21,
+                       size = 0.5,  
+                       fill = "#000814",
+                     popup.vars=c("Position_ID"="POSITION_ID","Species"="ENGLISH_NAME"))
+          Others_map
+  #assign('Base_map',Base_map,envir=globalenv())
+  }
+```
+
+
+
+
+
+# End of document

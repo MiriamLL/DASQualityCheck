@@ -1,0 +1,1390 @@
+---
+title: "PlausabilityCheck"
+author: "Marine Vertebrate Monitoring"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+params:
+  ThisDirectory: ThisDirectory
+  ThisFile: ThisFile
+  TripDaten: TripDaten
+  BasisDaten: BasisDaten
+  Observations: Observations
+---
+
+
+# Intro
+
+Using data from **`r params$ThisFile`** excel file.  
+The present document imports and explores the data provided.
+
+In this document you will find:  
+1. Revision of **control steps**. Including Area observed, Area controlled.  
+2. Revision of **survey area**. Including a map of the surveyed area.
+3. Revision of **environmental conditions**. Visualization of environmental conditions during the survey.  
+4. Revision of **Observations**. Including species list, check that the codes correspond to the species name, check the proportion of birds and mammals, check the most common species observed during the survey. Check errors in identifications.  
+5. Revision of **Plausibility** in the columns Activity, Age class and Sex.  
+6. **Spatial distribution** per taxonomic/morphological groups.  
+
+```{r PackageNames, echo=FALSE,message=FALSE, warning=FALSE}
+#LAST UPDATE 2025-06-16
+PackageList<-c('sp','dplyr','ggplot2','beepr','sf','readxl','tmap','DASDescriptions','kableExtra') 
+LoadPackages<-function(x){sapply(x, require, character.only = TRUE)}
+```
+
+```{r LoadPackages, echo=FALSE, include=FALSE, message=FALSE, warning=FALSE}
+LoadPackages(PackageList)
+library(flextable)
+```
+
+```{r use_params,echo=FALSE, echo=FALSE}
+Plausability_Trip<-params$TripDaten
+Plausability_Basis<-params$BasisDaten
+Plausability_Observations<-params$Observations
+```
+
+```{r ManualEdit,echo=FALSE, eval=FALSE}
+Plausability_Trip<-TripDaten
+Plausability_Basis<-BasisDaten
+Plausability_Observations<-Observations
+```
+
+\newpage
+
+# Control steps
+
+## Survey info
+
+Surveys must avoid noon due to problems with glare. Condition is that the transect width must be at least 400 m.
+
+```{r TableStripWidth, echo=FALSE}
+Table_Survey<-Plausability_Trip %>%
+  dplyr::select(TRIP_ID,DATE,STARTTIME,ENDTIME,STRIP_WIDTH)%>%
+  mutate(CONDITION=case_when(STRIP_WIDTH >= 400 ~ "Reached (400m)",
+                             TRUE ~ "Not reached (400m)"))
+Table_Survey <- flextable(Table_Survey)
+# Set column widths manually (in inches)
+Table_Survey<- set_table_properties(Table_Survey, width = 1, layout = "autofit") %>%
+  width(j = 1, width = 2) %>%   
+  width(j = 2, width = 1.5) %>% 
+  width(j = 3, width = 1.2)     
+# Print table 
+Table_Survey
+```
+
+## Area observed
+
+What was the proportion of **area analysed** in relation to the **area observed**?
+A minimum proportion of 70% of the recorded images or videos must be analyzable. Otherwise surveys must be repeated (at company's expenses). 
+
+```{r TableAreas,echo=FALSE}
+Table_Areas <- data.frame(survey_dates = as.character(unique(Plausability_Trip$DATE)),
+                         area_observed = sum(as.numeric(Plausability_Trip$AREA_OBSERVED)),
+                         area_analysed= sum(as.numeric(Plausability_Trip$AREA_ANALYSED)))
+Table_Areas<-Table_Areas %>%
+  mutate(area_proportion = round(((area_analysed*100)/area_observed),2))%>%
+  mutate(CONDITION=case_when(area_proportion > 70 ~ "Reached (70%)",
+                             TRUE ~ "Not reached (70%)"))
+names(Table_Areas) <- c("survey dates (YYYYMMDD)","area observed [km^2]","area analysed [km^2]","Proportion [%]","CONDITION")
+Table_Areas<- flextable(Table_Areas)
+Table_Areas <- set_table_properties(Table_Areas, width = 1, layout = "autofit")%>%
+  width(j = 1, width = 2) %>%   
+  width(j = 2, width = 2) %>% 
+  width(j = 3, width = 2)  %>% 
+  width(j = 4, width = 2)      
+# Print table 
+Table_Areas
+```
+
+## Area controlled
+
+What was the **area analysed** and the **area controlled** (i.e. area controlled during the screening control) in relation to the area analysed?
+
+Area controlled should be > 20%. 
+
+```{r TableControlled, echo=FALSE, eval=TRUE}
+Table_Controlled <- data.frame(survey_dates = as.character(Plausability_Trip$DATE),
+                          area_analysed = as.numeric(Plausability_Trip$AREA_ANALYSED),
+                          area_controlled= as.numeric(Plausability_Trip$AREA_CONTROLLED),
+                          area_controlled_prop =  NA)%>%
+  mutate(area_controlled_prop = round((area_controlled / area_analysed) * 100, 2))
+
+Table_Controlled<-Table_Controlled %>%
+  mutate(CONDITION=case_when(area_controlled_prop > 20 ~ "Reached (20%)",
+                             TRUE ~ "Not reached (20%)"))
+
+names(Table_Controlled) <- c("survey dates (YYYYMMDD)","area analysed [km^2]","area controlled [km^2]","area controlled [%]","CONDITION")
+Table_Controlled<- flextable(Table_Controlled)
+Table_Controlled<- set_table_properties(Table_Controlled, width = 1, layout = "autofit") %>%
+  width(j = 1, width = 2) %>%   
+  width(j = 2, width = 2) %>% 
+  width(j = 3, width = 2)  %>% 
+  width(j = 4, width = 2) %>% 
+  width(j = 5, width = 2) 
+Table_Controlled
+```
+
+
+\newpage
+
+# Survey flight
+
+## Maps of the survey effort
+
+Season surveyed.  
+
+```{r, echo=FALSE}
+Season<-Plausability_Basis %>%
+  mutate(month=substr(DATE,5,6))%>%
+  mutate(season=case_when(month %in% c("12","01","02") ~ "winter", #DEC, JAN, FEB
+                          month %in% c("03","04","05") ~ "spring", #MAR, APR, MAY
+                          month %in% c("06","07","08") ~ "summer", #JUN, JUL, AGO
+                          month %in% c("09","10","11") ~ "autumn", #SEP, OCT, NOV
+                          FALSE~"u"))
+unique(Season$season)
+```
+
+The **spatial extent** of the survey.
+
+```{r SurveyMap,echo=FALSE, fig.width=6}
+Study_areas<-st_transform(DASShapefiles::DE_areas,4326)
+Protected_SCA<- st_transform(DASShapefiles::DE_SCA,4326)
+Land<- st_transform(DASShapefiles::DE_land,4326)
+Protected_natura <- st_transform(DASShapefiles::DE_natura,4326)
+```
+
+```{r SurveyMap2,echo=FALSE, fig.width=6}
+Basis_df<-fortify(Plausability_Basis)
+Basis_df$lat<-as.numeric(Basis_df$LAT_PIC_CENTER)
+Basis_df$lon<-as.numeric(Basis_df$LON_PIC_CENTER)
+Basis_df <- Basis_df[!is.na(Basis_df$lat) & !is.na(Basis_df$lon), ]
+Basis_sf <- st_as_sf(Basis_df, coords = c("lon", "lat"),crs = 4326, agr = "constant")
+
+ggplot(data = Basis_sf) +
+  geom_sf(data = Study_areas, aes(fill=stratum),
+          colour = 'black', alpha=0.1)+
+  scale_fill_manual(values = c(A = '#7400b8',B = '#6930c3',C = '#5e60ce',
+                               D = '#277da1',E = '#577590',F = '#4d908e',
+                               G = '#43aa8b',H = '#90be6d',I = '#f9c74f',
+                               J = '#ff6d00',K = '#f8961e',L = '#f3722c',
+                               N = '#f94144'))+
+  geom_point(data = Basis_df, 
+                aes(x = lon, y = lat), 
+                size = 1, shape = 21, colour = "#9d0208")+
+  geom_sf(data = Land, colour = 'black', fill = '#e5e5e5')+
+  coord_sf(xlim = c(3, 15), ylim = c(53, 56), expand = FALSE)+
+  theme_bw()+
+  xlab('Longitude')+ylab('Latitude')+
+  theme(axis.text = element_text(size=6),
+        axis.title.x = element_text(size=6),
+        axis.title.y = element_text(size=6),
+        legend.position='none')+
+  scale_x_continuous(labels = function(x) paste0(x, '\u00B0', "W")) +
+  scale_y_continuous(labels = function(x) paste0(x, '\u00B0', "N")) 
+```
+
+## Plane height
+
+Some variation in plane height during the survey is expected. 
+
+```{r FlightHeightPlot, echo=F, fig.width=10, fig.height=3, warning=FALSE}
+ggplot(data=Plausability_Basis,aes(x=POSITION_ID,y=as.numeric(PLANE_FLIGHT_HEIGHT)),color=CAMERA_NUMBER)+
+    geom_point(aes(colour = factor(PLANE_FLIGHT_HEIGHT)), size = 1,color='darkblue') +
+    xlab("Picture_ID")+ylab('Plane height')+
+  theme_classic()+ 
+  theme(axis.title = element_text(size=15),
+        axis.ticks.x = element_blank(),
+        axis.text.y = element_text(size=15),
+        legend.position='none')+
+  scale_x_discrete(limits=Plausability_Basis$POSITION_ID,breaks=Plausability_Basis$POSITION_ID[seq(1,length(Plausability_Basis$POSITION_ID),by=5000)])+
+  theme(axis.text.x = element_text(angle=90,size=8))
+```
+
+\newpage
+
+# Environmental conditions during the surveys
+
+The conditions are plotted with the x axis being the POSITION_ID and the y axis the conditions.  
+For each POSITION_ID, all cameras are plotted but are one on top of the other. Therefore, the cameras will only be noticeable if the camera report different conditions for the same POSITION_ID.  
+The name of the all POSITION_ID is not plotted as it is no legible, but every 5,000 are plotted to use as a reference.
+
+```{r WeatherPlotFunction, echo=F, eval=T}
+PlotConditions<-function(EjeY=EjeY){
+  
+  Plausability_Basis$EjeX<-Plausability_Basis$POSITION_ID
+
+  ggplot(data=Plausability_Basis,aes(x=EjeX,y=EjeY),color=CAMERA_NUMBER)+
+    geom_point(aes(colour = factor(EjeY)), size = 1) +
+    xlab("Picture_ID")+
+  theme_classic()+ 
+  theme(axis.title = element_text(size=15),
+        axis.ticks.x = element_blank(),
+        axis.text.y = element_text(size=15),
+        legend.position='none')+
+  scale_x_discrete(limits=Plausability_Basis$EjeX,
+                   breaks=Plausability_Basis$EjeX[seq(1,length(Plausability_Basis$EjeX),
+                                                      by=5000)])+
+  theme(axis.text.x = element_text(angle=90,size=8))
+}
+```
+
+## Glare
+Intensity of the reflection of the sun in regular intervals and after a change of direction or transect, ascertained for the analysed part of the image. Defined as 0 = No glare, 1 = low glare, 2 = medium glare, 3 = strong glare.
+
+```{r GlarePlot, echo=F, fig.width=10, fig.height=3, warning=FALSE}
+PlotConditions(EjeY=as.numeric(Plausability_Basis$GLARE))+
+  ylab("Glare")+
+  scale_y_continuous(limits=c(-0.5,3))+ 
+  scale_color_manual(values=c("0"="#457b9d",
+                              "1"="#457b9d",
+                              "2"="#457b9d",
+                              "3"="#e63946", 
+                              "1.5"="#fb8500",
+                              "2.5"="#fb8500"))
+```
+
+## Sea state
+Sea state classification goes from 0 to 7.  Values <3 in blue, values > 3 in red. Usually no flights are performed above 3. 
+
+```{r SeastatePlot, echo=F, fig.width=10, fig.height=4.5, warning=FALSE}
+PlotConditions(EjeY=as.numeric(Plausability_Basis$SEASTATE))+
+  ylab("Sea state")+
+  scale_y_continuous(expand = c(0,0),limits=c(-0.5,7.5), breaks=c(0,1,2,3,4,5,6,7))+
+  scale_color_manual(values=c("0"="#457b9d", #0
+                              "1"="#457b9d", #1
+                              "2"="#457b9d", #2 
+                              "3"="#457b9d", #3 blue
+                              "4"="#e63946", #4 red
+                              "5"="#e63946", #5
+                              "6"="#e63946", #6
+                              "7"="#e63946"))#7
+```
+
+\newpage
+
+## Turbidity
+Turbidity goes from 1-3. Classification corresponds to: 1= no turbidity, 2= medium turbidity, 3=strong turbidity. Note: 0 is not allowed and is shown is marked in red. 
+
+```{r TurbidityPlot, echo=F, fig.width=10, fig.height=4.5, warning=FALSE}
+PlotConditions(EjeY=as.numeric(Plausability_Basis$TURBIDITY))+
+  ylab("Turbidity")+
+  scale_y_continuous(limits=c(-0.5,3.5),breaks=c(0,1,2,3)) +
+  scale_color_manual(values=c("0"="#e63946", #red
+                              "1"="#457b9d", #blue
+                              "2"="#457b9d",
+                              "3"="#457b9d"))
+```
+
+## Clarity
+Clarity of the air goes from: 0 = not recorded, 1 = little, 2 = medium, 3 = strong. 
+
+```{r ClarityPlot, echo=F, fig.width=10, fig.height=3, warning=FALSE}
+PlotConditions(EjeY=as.numeric(Plausability_Basis$CLARITY))+
+  ylab("Clarity of air")+
+  scale_y_continuous(limits=c(0,3))+
+  scale_color_manual(values=c("0"="#e63946",
+                              "1"="#457b9d", 
+                              "2"="#457b9d",
+                              "3"="#457b9d"))
+```
+
+\newpage
+
+## Picture quality
+
+What is the proportion of pictures that had **good quality**.  Is expected to be above 80%. 
+
+```{r TablePicture, echo=FALSE,eval=TRUE}
+FlightName<-unique(Plausability_Basis$CRUISENO)
+GoodQuality<-Plausability_Basis%>%
+  filter(PIC_QUALITY==1)%>%
+  tally()
+BadQuality<-Plausability_Basis%>%
+  filter(PIC_QUALITY==2)%>%
+  tally()
+Table_Picture<- data.frame(survey = FlightName,
+                           good_quality = GoodQuality$n,
+                           bad_quality = BadQuality$n)
+Table_Picture<-Table_Picture %>%
+  mutate(pic_quality_percent = (good_quality*100)/(good_quality+bad_quality))
+Table_Picture<- Table_Picture %>%
+  mutate(CONDITION=case_when(pic_quality_percent > 80 ~ "Reached (80%)",
+                             TRUE ~ "Not reached (80%)"))
+names(Table_Picture) <- c("survey",
+                          "Good (n)",
+                          "Bad (n)",
+                          "Percentage good quality [%]",
+                          "CONDITION")
+Table_Picture <- flextable(Table_Picture)
+# Set column widths manually (in inches)
+Table_Picture<- set_table_properties(Table_Picture, width = 1, layout = "autofit") %>%
+  width(j = 1, width = 2) %>%   # column 1 = 2 inches
+  width(j = 2, width = 1.5) %>% 
+  width(j = 3, width = 1.5) %>% 
+  width(j = 4, width = 2) %>% 
+  width(j = 5, width = 2) 
+# Print table 
+Table_Picture
+```
+
+Picture quality classification corresponds to: 1= the image has been analysed, 2= image quality too bad for analysis (in red).
+
+```{r PicturePlot, echo=F, fig.width=10, fig.height=3, warning=FALSE}
+Plausability_Basis$PIC_QUALITY<-as.numeric(Plausability_Basis$PIC_QUALITY)
+PlotConditions(EjeY=Plausability_Basis$PIC_QUALITY)+
+  ylab("Picture quality")+
+  scale_y_continuous(limits=c(0,3),breaks=c(0,1,2,3))+ 
+  scale_color_manual(breaks = c("1", "2"),
+                     values=c("0"="#457b9d",
+                              "1"="#457b9d", #blue
+                              "2"="#e63946")) #red
+```
+
+\newpage
+
+# Observations
+
+```{r TableDensities,  echo=FALSE, eval=FALSE}
+## Species densities
+### Check densities being plausible.  Note that for number of species, unidentified individuals were counted as one species.
+Table_Densities<-data.frame(Number_species=(Observations %>%
+                             distinct(ENGLISH_NAME)%>%
+                             drop_na(ENGLISH_NAME)%>%
+                             count())$n,
+           Number_individuals=(Observations %>%
+                                 drop_na(ENGLISH_NAME)%>%
+                                 count())$n,
+           Area_analysed=sum(as.numeric(TripDaten$AREA_ANALYSED))
+           )
+Table_Densities<-Table_Densities %>%
+  mutate(Densities=round(Number_individuals/Area_analysed,2))%>%
+  rename('Total no. of species sighted'=Number_species,
+         'Total no. of individuals'=Number_individuals,
+         'Area analysed [km2]'=Area_analysed,
+         'Density [ind/km2]'=Densities)
+Table_Densities<- flextable(Table_Densities)
+Table_Densities <- set_table_properties(Table_Densities, width = 1, layout = "autofit")
+Table_Densities
+```
+
+# Controlled sightings per survey
+
+How large was the difference between ID and the ID control (**ID_CONTROL_DIFFERENCE**)?
+
+```{r ControlledIDObservations,echo=FALSE, include=FALSE}
+# transform class
+if (!is.character(BasisDaten$POSITION_ID)) {
+  BasisDaten <- BasisDaten %>%
+    mutate(POSITION_ID = as.character(POSITION_ID))
+}
+
+if (!is.character(Plausability_Observations$POSITION_ID)) {
+  Plausability_Observations <- Plausability_Observations %>%
+    mutate(POSITION_ID = as.character(POSITION_ID))
+}
+
+# Total number of sightings from Observations
+Controlled_Observations<-Plausability_Observations %>%
+  left_join(BasisDaten,by='POSITION_ID') %>%
+  group_by(DATE)%>%
+  tally()
+Controlled_Observations <-Controlled_Observations %>% 
+  rename(survey_dates_YYYYMMDD=DATE,
+         number_of_sightings=n)
+
+# Number of controlled sightings, from Trip
+Controlled_Ids<- Plausability_Observations %>%
+  group_by(ID_MATCH_MISMATCH)%>%
+  tally()
+Controlled_Ids<- Controlled_Ids[2,2]+Controlled_Ids[1,2]
+Controlled_Ids <- Controlled_Ids %>% rename(number_of_controlled_sightings=n)
+
+# Difference between match and mismatch
+Controlled_Ids_Difference<-Plausability_Observations %>%
+  group_by(ID_MATCH_MISMATCH)%>%
+  tally()
+Controlled_Difference <- Controlled_Ids_Difference$n[2]*100/ (Controlled_Ids_Difference$n[1]+Controlled_Ids_Difference$n[2])
+Controlled_Difference
+```
+
+```{r ControlledIDTable, echo=FALSE, include=FALSE}
+Controlled_Observations_Table<-cbind(Controlled_Observations,Controlled_Ids)
+Controlled_Observations_Table<- Controlled_Observations_Table %>% 
+  mutate(Id_controlled_difference=Controlled_Difference)%>%
+  mutate(percentaje_of_controlled=number_of_controlled_sightings*100/number_of_sightings)%>%
+  mutate(percentaje_of_controlled=round(percentaje_of_controlled,2))
+Controlled_Observations_Table 
+```
+
+```{r Controlled_Table, echo=FALSE}
+Controlled_Table<-Controlled_Observations_Table  %>%
+  relocate(survey_dates_YYYYMMDD,
+           number_of_sightings,
+           number_of_controlled_sightings,
+           Id_controlled_difference,
+           percentaje_of_controlled)
+```
+
+```{r ControlledTableNames,echo=FALSE}
+names(Controlled_Table)<- c("survey dates (YYYYMMDD)",
+                           "number of sightings",
+                           "number of controlled sightings",
+                           "difference between first ID and control [%]",
+                           "percentage of controlled sightings [%]")
+```
+
+```{r ControlledTableKnitr, echo=FALSE, eval=TRUE}
+Controlled_Table<- flextable(Controlled_Table)
+Controlled_Table <- set_table_properties(Controlled_Table, width = 1, layout = "autofit")
+Controlled_Table
+```
+
+
+# Abiotic structures
+
+```{r TableAbioticStructures, echo=FALSE}
+if (nrow(Observations %>% filter(!is.na(ABIOTIC_STRUCTURES))) == 0) {
+  print("There were no ABIOTIC_STRUCTURES")
+        }else{  
+          Abiotic_Structures<-Plausability_Observations %>%
+            drop_na(ABIOTIC_STRUCTURES)%>%
+            group_by(ABIOTIC_STRUCTURES)%>%
+            count()
+          Abiotic_Descriptions<-DASDescriptions::Code_Descriptions %>%
+            select(starts_with("ABIOTIC_STRUCTURE"))%>%
+            rename(ABIOTIC_STRUCTURES=ABIOTIC_STRUCTURE_CODE)%>%
+            mutate(ABIOTIC_STRUCTURES=as.character(ABIOTIC_STRUCTURES))%>%
+            drop_na()
+          Abiotic_Structures <-Abiotic_Structures %>%
+            mutate(ABIOTIC_STRUCTURES=as.character(ABIOTIC_STRUCTURES))%>%
+            left_join(Abiotic_Descriptions,by='ABIOTIC_STRUCTURES')%>%
+            drop_na()%>%
+            select(ABIOTIC_STRUCTURES,ABIOTIC_STRUCTURE_DESCRIPTION,n)
+Abiotic_Structures<- flextable(Abiotic_Structures)
+Abiotic_Structures<- set_table_properties(Abiotic_Structures, width = 1, layout = "autofit") 
+Abiotic_Structures
+          }
+```
+
+# Abiotic observations
+
+```{r TableAbioticObservations, echo=FALSE}
+if (nrow(Plausability_Observations %>% filter(!is.na(ABIOTIC_OBSERVATION))) == 0) {
+  print(paste0("There were no ABIOTIC_OBSERVATION"))
+}else{  
+  Abiotic_Observations<-Plausability_Observations %>%
+    drop_na(ABIOTIC_OBSERVATION)%>%
+    group_by(ABIOTIC_OBSERVATION)%>%
+    count()
+  AbioticObs_Descriptions<-DASDescriptions::Code_Descriptions %>%
+    select(starts_with("ABIOTIC_OBSERVATIO"))%>%
+    rename(ABIOTIC_OBSERVATION=ABIOTIC_OBSERVATION_CODE)%>%
+    mutate(ABIOTIC_OBSERVATION=as.character(ABIOTIC_OBSERVATION))%>%
+    drop_na()
+  Abiotic_Observations <-Abiotic_Observations %>%
+    mutate(ABIOTIC_OBSERVATION=as.character(ABIOTIC_OBSERVATION))%>%
+    left_join(AbioticObs_Descriptions,by='ABIOTIC_OBSERVATION')%>%
+    drop_na()%>%
+    select(ABIOTIC_OBSERVATION,ABIOTIC_OBSERVATION_DESCRIPTION,n)
+    
+Abiotic_Observations<- flextable(Abiotic_Observations)
+Abiotic_Observations<- set_table_properties(Abiotic_Observations, width = 1, layout = "autofit") 
+Abiotic_Observations
+}
+```
+
+
+<br>
+
+```{r AbioticObservations, echo=FALSE, comment=NA, message=FALSE}
+#Create a column with mammal or birds
+sprintf("Note: %d abiotic structures and abiotic observations that will not be included in the next steps",length(which(is.na(Plausability_Observations$OBSERVATION))))
+```
+\newpage
+
+# Species list
+
+List all **species** sighted during the surveys with number of sightings and check the codes.
+
+```{r Species_Table, echo=FALSE}
+Names_1check<-Observations %>% drop_na(OBSERVATION)
+Names_2check<-Names_1check %>% 
+    group_by(ENGLISH_NAME,OBSERVATION) %>%
+   count()
+Names_2check<-Names_2check%>% arrange(as.numeric(OBSERVATION))
+
+Euring<-DASDescriptions::Code_Euring %>%
+  rename(ENGLISH_NAME=English_name)%>%
+  mutate(Code=as.numeric(Code))%>%
+  select(Code,ENGLISH_NAME)%>%
+  # update Arctic Tern Code
+  mutate(Code=case_when(Code==6169~6159,TRUE ~ Code))
+
+Names_3check<-Names_2check %>%
+  mutate(Code=as.numeric(OBSERVATION))%>%
+  left_join(Euring,by='Code')%>%
+  rename(ENGLISH_NAME_provided=ENGLISH_NAME.x,
+         ENGLISH_NAME_expected=ENGLISH_NAME.y)%>%
+  mutate(check=(ENGLISH_NAME_provided==ENGLISH_NAME_expected))%>%
+  relocate(Code,OBSERVATION,ENGLISH_NAME_expected, ENGLISH_NAME_provided,n)%>%
+  rename('Code provided'=OBSERVATION,
+         'Code expected'=Code,
+         'Name provided'=ENGLISH_NAME_provided,
+         'Name expected'=ENGLISH_NAME_expected,
+         'Name fitting'=check)
+
+Names_4check<-Names_3check %>%
+  select('Code provided','Name provided',n)
+
+Species_Table<- flextable(Names_4check)
+Species_Table <- set_table_properties(Species_Table, width = 1, layout = "autofit")
+Species_Table
+```
+
+
+These species are missing taxonomic group, likely as their name doesnt fit the expected, and can not be included in the map unless corrected to the standardize form.
+
+```{r CodesTax, echo=FALSE}
+Euring_Tax<-DASDescriptions::Code_Euring %>%
+  rename(ENGLISH_NAME=English_name)%>%
+  mutate(Code=as.numeric(Code))%>%
+  select(Code,ENGLISH_NAME,Artificial_tax_class)%>%
+  # update Arctic Tern Code
+  mutate(Code=case_when(Code==6169~6159,TRUE ~ Code))
+
+Names_4tax<- subset(Names_1check, OBSERVATION != "0")
+Names_5tax<-left_join(Names_4tax,Euring_Tax,by='ENGLISH_NAME')
+Names_6taxmissing<-Names_5tax %>% 
+  filter(is.na(Artificial_tax_class))
+
+Names_7taxmissing<-Names_6taxmissing %>% 
+  group_by(ENGLISH_NAME,Artificial_tax_class)%>% 
+  tally()
+
+# Check names not fitting
+if (length(unique(Names_7taxmissing$ENGLISH_NAME)) == 0) {
+  cat("There are no species missing tax/morphological classification.")
+} else {
+  cat("These species are missing tax/morphological classification.")
+  knitr::kable(Names_7taxmissing)
+}
+```
+
+\newpage
+
+# Match mismatch
+
+The selection of images for inspection should be random. The persons in the screening and ID control roles should not know whether they are determining a sighting (or during screening) or checking the determination (blind control). 
+
+At the ID control level, care must be taken to ensure that the controls include as many species and taxonomic groups as possible.  
+
+```{r AuditedObservations, echo=F, fig.width=10, fig.height=4.5, warning=FALSE}
+# Replace zeros
+Audited_1check<-Plausability_Observations%>%
+  mutate(ID_MATCH_MISMATCH = replace_na(ID_MATCH_MISMATCH, "0"))
+```
+
+```{r AuditedObservationsClass, echo=F, fig.width=10, fig.height=4.5, warning=FALSE}
+if ("OBSERVATION_ID" %in% colnames(Audited_1check)) {
+  Audited_1check <- Audited_1check[order(as.numeric(Audited_1check$OBSERVATION_ID)), ]
+  cat("The column OBSERVATION_ID will be used\n")
+
+ggplot(data=Audited_1check,aes(x=as.numeric(OBSERVATION_ID),y=as.numeric(ID_MATCH_MISMATCH)))+
+    geom_point(aes(colour = factor(ID_MATCH_MISMATCH)), size = 1) +
+    xlab("Observation_ID")+ylab('Match Mismatch')+
+  theme_classic()+ 
+  theme(axis.title = element_text(size=15),
+        axis.ticks.x = element_blank(),
+        axis.text.y = element_text(size=15),
+        legend.position='none')+
+  scale_y_continuous(limits=c(-0.5,2.5))+ 
+  scale_color_manual(values=c("0"="black",
+                              "1"="#457b9d",
+                              "2"="#e63946"))+
+  scale_x_continuous(breaks=as.numeric(Audited_1check$OBSERVATION_ID)[seq(1,length(as.numeric(Audited_1check$OBSERVATION_ID)),by=200)])+
+  theme(axis.text.x = element_text(angle=90,size=8))+
+  NULL
+  
+}else {
+#rename
+Audited_1check <- Audited_1check %>%
+  rename(OBSERVATION_ID = Observation_ID)
+cat("The column OBSERVATION_ID was renamed from Observation_ID\n")
+
+ggplot(data=Audited_1check,aes(x=OBSERVATION_ID,y=as.numeric(ID_MATCH_MISMATCH)))+
+    geom_point(aes(colour = factor(ID_MATCH_MISMATCH)), size = 1) +
+    xlab("Observation_ID")+ylab('Match Mismatch')+
+  theme_classic()+ 
+  theme(axis.title = element_text(size=15),
+        axis.ticks.x = element_blank(),
+        axis.text.y = element_text(size=15),
+        legend.position='none')+
+  scale_y_continuous(limits=c(-0.5,2.5))+ 
+  scale_color_manual(values=c("0"="black",
+                              "1"="#457b9d",
+                              "2"="#e63946"))+
+  scale_x_discrete(breaks=Audited_1check$OBSERVATION_ID[seq(1,length(Audited_1check$OBSERVATION_ID),by=200)])+
+  theme(axis.text.x = element_text(angle=90,size=8))+
+  NULL
+}
+```
+
+Shows the proportion of animal identification that were matched the initial identification.
+
+```{r CheckMismatch, echo=FALSE}
+if ("2" %in% Plausability_Observations$ID_MATCH_MISMATCH==FALSE){
+    print("Missing 2 in ID_MATCH_MISMATCH, errors in identification can not be calculated")
+  }else{
+Table_Identification<-Observations %>%
+  group_by(ID_MATCH_MISMATCH)%>%
+  tally()%>%
+  pivot_wider(names_from=ID_MATCH_MISMATCH, values_from=n)%>%
+  rename(Match=1,
+         Mismatch=2,
+         Unchecked=3)%>%
+  mutate(Prop_checked=(Match+Mismatch)*100/(Unchecked+Match+Mismatch))%>%
+  mutate(Prop_checked=round(Prop_checked,2))%>%
+  mutate(Proportion_matched=(Match*100)/(Match+Mismatch))%>%
+  mutate(Proportion_matched=round(Proportion_matched,2))%>%
+  select(Match,Mismatch,Unchecked,Prop_checked,Proportion_matched)
+names(Table_Identification)<-c('Match','Mismatch','Not Audited','Audited [%]','Matched [%]')
+Table_Identification<- flextable(Table_Identification)
+# Set column widths manually (in inches)
+Table_Identification<- set_table_properties(Table_Identification, width = 1, layout = "autofit") %>%
+  width(j = 1, width = 2) %>%   # column 1 = 2 inches
+  width(j = 2, width = 2) %>% 
+  width(j = 3, width = 2) 
+# Print table 
+Table_Identification}
+```
+
+## Mismatch
+
+How many animals were first **misidentified**?
+
+```{r, echo=FALSE}
+if ("2" %in% Audited_1check$ID_MATCH_MISMATCH==FALSE){
+    print("Missing 2 in ID_MATCH_MISMATCH, errors in identification can not be calculated")
+  }else{
+Audited_2check<-Audited_1check %>%
+  group_by(ENGLISH_NAME,ID_MATCH_MISMATCH)%>%
+  tally()%>%
+  pivot_wider(names_from=ID_MATCH_MISMATCH, values_from=n)
+
+Audited_3check<-Audited_2check%>%
+  rename(ID_match="1",
+         ID_mismatch="2",
+         Not_checked="0")
+
+Audited_4check<-Audited_3check %>%
+  filter(ID_match!=0 & ID_mismatch != 0) 
+  
+Audited_5check<-Audited_4check %>% select(ENGLISH_NAME,ID_match,ID_mismatch)
+
+Table_biases <- flextable(Audited_5check)
+# Set column widths manually (in inches)
+Table_biases<- set_table_properties(Table_biases, width = 1, layout = "autofit") %>%
+  width(j = 1, width = 2) %>%   # column 1 = 2 inches
+  width(j = 2, width = 2) %>% 
+  width(j = 3, width = 2) 
+# Print table 
+Table_biases
+}
+```
+
+\newpage
+
+## Biases
+
+Are there any species that require revision due to frequent misidentification? If so, consider conducting a reevaluation. For example, that the errors were more frequent than the matches. 
+
+```{r, echo=FALSE}
+if ("2" %in% Audited_1check$ID_MATCH_MISMATCH==FALSE){
+    print("Missing 2 in ID_MATCH_MISMATCH, biases can not be calculated")
+  }else{
+Audited_7check<-Audited_5check %>%
+  mutate(Commonly_mistaken=ID_mismatch>ID_match)%>%
+  filter(Commonly_mistaken==TRUE)%>%
+  select(ENGLISH_NAME,ID_match,ID_mismatch)
+Audited_7check<- flextable(Audited_7check)
+Audited_7check<- set_table_properties(Audited_7check, width = 1, layout = "autofit") 
+Audited_7check}
+```
+
+
+Ensure that there is no observer bias, such as when a large number of individuals from one species are consistently misidentified.
+
+```{r MissMatchPlot, echo=F,fig.width=10, fig.height=10}
+if ("2" %in% Audited_1check$ID_MATCH_MISMATCH==FALSE){
+    print("Missing 2 in ID_MATCH_MISMATCH, plot can not be created")
+  }else{
+  Audited_6check<-Audited_5check %>% 
+    pivot_longer(cols = c("ID_match","ID_mismatch"),names_to = "TYPE")
+  
+  ggplot(data=Audited_6check, aes(x=ENGLISH_NAME, y=value, fill=TYPE)) +
+      geom_bar(stat="identity", position=position_dodge())+
+      ylab('Controlled sightings')+
+      xlab('')+
+      coord_flip()+
+      scale_y_continuous(expand = c(0,0),
+                         limits=c(0,max(Audited_6check$value)+
+                                    mean(Audited_6check$value)))+
+  scale_fill_manual(values=c('#999999','#E69F00'))+
+  theme_classic()+
+  theme(axis.title = element_text(size=10),
+        axis.text.x = element_text(size=10),
+        axis.text.y = element_text(size=10),
+        legend.position='top')
+}
+```
+
+
+
+\newpage
+
+# Detection Step
+
+Gives insights on the proportion of missed animals during the screening process.
+
+By definition 0 = No screening control, 1 = Only on screening, 2 = Only on control, 3 = Screening and Control (Agreement), 4 = Detected in ID, 5 = Detected in ID control.
+
+```{r TableDetectionDefinitions, echo=FALSE}
+Screening_1check<-Plausability_Observations %>%
+    mutate(SCREENING=case_when(DETECTION_STEP == 1 ~ 'DETECTED_1SCREENING',
+                               DETECTION_STEP == 2 ~ 'DETECTED_2CONTROL',
+                               DETECTION_STEP == 3 ~ 'DETECTED_3AGREEMENT',
+                               DETECTION_STEP == 4 ~ 'DETECTED_4ID',
+                               DETECTION_STEP == 5 ~ 'DETECTED_5ID_CONTROL',
+                               DETECTION_STEP == 0 ~ 'NOT_CHECKED',
+                               TRUE  ~ 'NOT_CHECKED'))
+
+Screening_2check<-Screening_1check %>%
+  group_by(SCREENING)%>%
+  tally()
+
+Screening_3check<-Screening_2check %>%
+  pivot_wider(names_from=SCREENING, values_from=n) 
+```
+
+```{r Detection_Table, echo=FALSE}
+Detection_Table<-Screening_3check %>%
+  mutate(Proportion_reviewed=(DETECTED_1SCREENING+DETECTED_2CONTROL+DETECTED_3AGREEMENT)*100/
+           (DETECTED_1SCREENING+DETECTED_2CONTROL+DETECTED_3AGREEMENT+NOT_CHECKED))%>%
+  mutate(Proportion_reviewed=round(Proportion_reviewed,2))%>%
+  select(DETECTED_1SCREENING,DETECTED_2CONTROL,DETECTED_3AGREEMENT,NOT_CHECKED,Proportion_reviewed)%>%
+  rename('Screener'=DETECTED_1SCREENING,
+         'Reviewer'=DETECTED_2CONTROL,
+         'Agreement'=DETECTED_3AGREEMENT,
+         #'Detected during ID'=DETECTED_4ID,
+         'Not Reviewed'=NOT_CHECKED,
+         'Reviewed [%]'=Proportion_reviewed
+         #'Agreement [%]'=Proportion_agreement
+  )
+Table_Detection<- flextable(Detection_Table)
+# Set column widths manually (in inches)
+Table_Detection<- set_table_properties(Table_Detection, width = 1, layout = "autofit") 
+# Print table 
+Table_Detection
+```
+
+
+### Formula
+
+Using the Lincoln-Petersen mark-recapture formula N= MC/R, we estimated the total number of animals encountered during the survey. In this formula, M represents the total number of animals found by the screener, C is the total number of animals found by the auditor, and R is the number of animals detected by both the screener and the auditor. The value of N represents the estimated number of animals findable in the pictures.  
+Based on these results, the efficiency of the screener was calculated as s = M/N, and the efficiency of the auditor as a = C/N.  
+Since the screener and the auditor are assigned randomly and therefore interchangeable, the overall efficiency of a single person reviewing the footage, referred to as single control efficiency was calculated as sc = (s+a)/2. 
+Assuming 20% of the area audited, the efficiency for this 20% is defined as db = (M+C-R)/N. If the efficiency of the entire process is to be calculated then rl = (dc*0.2)+(sc*0.8).  However, the actual number of animals remains unknown and therefore the number of missed animals is underestimated . 
+
+```{r TableFormulaDetection, echo=FALSE}
+FormulaDetection_Table<-Detection_Table %>%
+  dplyr::select(Screener,Reviewer,Agreement)%>%
+  rename(m=Screener,
+         c=Reviewer,
+         o=Agreement)%>%
+  mutate(
+         M=m+o,
+         C=c+o,
+         R=o,
+         N=(M*C)/R,
+         s=M/N,
+         a=C/N,
+         sc=(s+a)/2,
+         dc=(M+C-R)/N,
+         rl=(dc*0.2)+(sc*0.8))%>%
+  mutate(N=round(N,2),
+         s=round(s,2),
+         a=round(a,2),
+         sc=round(sc,2),
+         dc=round(dc,2),
+         rl=round(rl,2))%>%
+  dplyr::select(M,C,R,N,s,a,sc,dc,rl)
+```
+
+```{r TableFormulaDetectionKnitr, echo=FALSE}
+Table_FormulaDetection <- flextable(FormulaDetection_Table)
+# Set column widths manually (in inches)
+Table_FormulaDetection<- set_table_properties(Table_FormulaDetection, width = 1, layout = "autofit") %>%
+  width(j = 1, width = 2) %>%   # column 1 = 2 inches
+  width(j = 2, width = 1.5) %>% # column 2 = 1.5 inches
+  width(j = 3, width = 1.2)     # etc.
+# Print table 
+Table_FormulaDetection
+```
+
+
+\newpage
+
+# Proportion animals
+
+How many **marine mammals** and **birds** were sighted?
+
+```{r Taxa, echo=FALSE}
+Animals_1check<-Names_5tax %>%
+  mutate(Taxa=case_when(Artificial_tax_class == 'Marine_mammals' ~ "Mammals",
+                        Artificial_tax_class %in% c("Gulls","Skuas","Ducks_Shelducks",
+                                                    "Geese","Terns","Waders","Gannets_Swans",
+                                                    "Divers","Auks","Grebes","Cormorants",
+                                                    "Other_seabirds")  ~ "Birds",
+                        TRUE ~ "Others"))
+```
+
+```{r TaxaPlot, echo=FALSE, fig.width=5, fig.height=4}
+#Check proportion marine mammals and birds
+Animals_2check<-Animals_1check %>% group_by(Taxa) %>% tally()
+ggplot(Animals_2check, aes(x=Taxa, y=n, fill=Taxa))+
+  geom_bar(stat='identity')+
+  theme(legend.position = 'none')+
+  xlab('Taxa')+ylab('Number of sightings')+
+  theme_classic()+ 
+  scale_y_continuous(expand = c(0,0)) +
+  theme(axis.title = element_text(size=15),
+        axis.text.x = element_text(size=15),
+        axis.text.y = element_text(size=15),
+        legend.position='none')+
+  scale_fill_manual(values=c("#2a9d8f","#264653","#669bbc"))
+```
+
+### Bird observations
+
+```{r BirdsSightingsPlot, echo=FALSE, fig.height=10, fig.width=8}
+Birds_4check<-Animals_1check %>% filter(Taxa == 'Birds')
+Birds_5check<-Birds_4check %>% 
+  group_by(ENGLISH_NAME,OBSERVATION,Artificial_tax_class) %>%
+  count()
+ggplot(Birds_5check, aes(x=paste(str_pad(OBSERVATION, 6, pad = "0"),
+                                 ENGLISH_NAME), 
+                         y=n,
+                         fill=Artificial_tax_class)) +
+  geom_bar(stat='identity')+
+  coord_flip() +
+  ylab("Sightings")+xlab("Species")+
+  scale_y_continuous(expand = c(0,0),
+                     limits=c(-0.5,max(Birds_5check$n)+mean(Birds_5check$n)))+
+  theme_classic()+ 
+  theme(axis.title = element_text(size=10),
+        axis.text.x = element_text(size=10),
+        axis.text.y = element_text(size=10),
+        legend.position='none')+
+  scale_fill_manual(values=c("#5f0f40","#9a031e","#fb8b24","#e36414",
+                             "#0f4c5c","#05668d","#5f0f40","#9a031e",
+                             "#fb8b24","#e36414","#0f4c5c","#05668d"))
+```
+
+
+```{r CommonBirdsPlot, fig.width=12, fig.height=4, eval=FALSE, echo=FALSE}
+#Calculate number of observations per species
+Birds_1check<-Animals_1check %>% filter(Taxa=='Birds')
+Birds_2check<-Birds_1check %>% 
+  group_by(ENGLISH_NAME,OBSERVATION,Taxa) %>%
+  count()
+Birds_3check<-Birds_2check %>%
+  arrange(desc((n)))%>%
+  head(5)
+ggplot(Birds_3check, aes(x=ENGLISH_NAME, 
+                         y=n, 
+                         order = -as.numeric(n))) +
+  geom_bar(stat='identity',position = position_dodge())+
+  ylab("Sightings")+xlab("")+
+  theme_classic()+ 
+  coord_flip()+ 
+  scale_y_continuous(expand = c(0,0),
+                     limits=c(-0.5,max(Birds_3check$n)+mean(Birds_3check$n)))+
+  theme(axis.title =  element_text(size=20),
+        axis.text.x = element_text(size=20, angle=45,hjust=1),
+        axis.text.y = element_text(size=20),
+        legend.position='none')+
+  scale_fill_manual(values=c("#264653","#264653","#264653","#264653","#264653"))
+```
+
+\newpage
+
+### Marine mammal observations
+
+```{r MammalsSightingsPlot, echo=FALSE, fig.height=10, fig.width=8}
+Mammals_4check<-Animals_1check %>% filter(Taxa=="Mammals")
+Mammals_5check<-Mammals_4check %>% 
+  group_by(ENGLISH_NAME,OBSERVATION,Artificial_tax_class) %>%
+  count()
+ggplot(Mammals_5check, aes(x=paste(str_pad(OBSERVATION, 6, pad = "0"),
+                                 ENGLISH_NAME), 
+                         y=n,
+                         fill=Artificial_tax_class)) +
+  geom_bar(stat='identity')+
+  coord_flip() +
+  ylab("Sightings")+xlab("Species")+
+  scale_y_continuous(expand = c(0,0),
+                     limits=c(0,max(Mammals_5check$n)+mean(Mammals_5check$n)))+
+  theme_classic()+ 
+  theme(axis.title = element_text(size=10),
+        axis.text.x = element_text(size=10),
+        axis.text.y = element_text(size=10),
+        legend.position='none')+
+  scale_fill_manual(values=c("#669bbc"))
+```
+
+\newpage
+
+### Other species
+
+Includes terrestrial birds, fish, sharks and some animals names are probably misspelled and could be corrected (either in the quality check or in the excel sheet), and therefore included.
+
+```{r MissingSightingsPlot, echo=FALSE, fig.height=10, fig.width=8}
+Missing_4check<-Animals_1check %>% filter(Taxa=="Others")
+Missing_5check<-Missing_4check %>% 
+  group_by(ENGLISH_NAME,OBSERVATION,Artificial_tax_class) %>%
+  count()
+ggplot(Missing_5check, aes(x=paste(str_pad(OBSERVATION, 6, pad = "0"),
+                                 ENGLISH_NAME), 
+                         y=n,
+                         fill=Artificial_tax_class)) +
+  geom_bar(stat='identity')+
+  coord_flip() +
+  ylab("Sightings")+xlab("Species")+
+  scale_y_continuous(expand = c(0,0),
+                     limits=c(-0.5,max(Missing_5check$n)+mean(Missing_5check$n)))+
+  theme_classic()+ 
+  theme(axis.title = element_text(size=10),
+        axis.text.x = element_text(size=10),
+        axis.text.y = element_text(size=10),
+        legend.position='none')+
+  scale_fill_manual(values=c("#5f0f40","#9a031e","#fb8b24","#e36414",
+                             "#0f4c5c","#05668d","#5f0f40","#9a031e",
+                             "#fb8b24","#e36414","#0f4c5c","#05668d"))
+```
+
+\newpage
+
+# Plausability
+
+## Activity 
+
+Shows the proportion of activities recorded in all animals.  
+Only swimming and flying considered for the calculation.  
+It is expected that the proportion of swimming animals is higher than that of flying. 
+
+```{r TableActivity, echo=FALSE}
+Table_Activity<-Plausability_Observations %>%
+  drop_na(OBSERVATION)%>%
+  group_by(ACTIVITY)%>%
+  tally()%>%
+  pivot_wider(names_from=ACTIVITY, values_from=n)%>%
+  # Fill missing activity columns with 0
+  mutate(
+    `3` = if (!"3" %in% names(.)) 0 else `3`,
+    `4` = if (!"4" %in% names(.)) 0 else `4`,
+    `5` = if (!"5" %in% names(.)) 0 else `5`,
+    `NA` = if (!"NA" %in% names(.)) NA else `NA`
+  )%>%
+  rename(Swimming="1",
+         Flying="2",
+         Submerged="3",
+         Breaching_surface="4",
+         Associated_with_platform="5",
+         Undeclared="NA")%>%
+  mutate(Prop_flying=(Flying*100)/(Flying+Swimming))%>%
+  mutate(Prop_flying=round(Prop_flying,2))%>%
+  mutate(Prop_swimming=round(100-Prop_flying,2))%>%
+  select(Prop_swimming,Prop_flying,Swimming,Flying)%>%
+  rename('Swimming'=Swimming,
+         'Flying'=Flying,
+         'Flying [%]'=Prop_flying,
+         'Swimming [%]'=Prop_swimming)
+Table_Activity <- flextable(Table_Activity)
+# Set column widths manually (in inches)
+Table_Activity<- set_table_properties(Table_Activity, width = 1, layout = "autofit") %>%
+  width(j = 1, width = 2) %>%   
+  width(j = 2, width = 2) %>% 
+  width(j = 3, width = 2.5) 
+Table_Activity
+```
+
+Expected that birds are flying or swimming. Marine mammals swimming or porpoising. Missing activities are not allowed (please check if Missing = TRUE)
+
+```{r ActivityTable,echo=FALSE}
+Activity_1df<-Observations %>%
+  group_by(ENGLISH_NAME,ACTIVITY)%>%
+  tally()%>%
+  pivot_wider(names_from=ACTIVITY,values_from=n)
+Activity_2df<-Activity_1df %>%
+   mutate(
+    `3` = if (!"3" %in% names(.)) 0 else `3`,
+    `4` = if (!"4" %in% names(.)) 0 else `4`,
+    `5` = if (!"5" %in% names(.)) 0 else `5`,
+    `0` = if (!"0" %in% names(.)) NA else `0`
+  )%>%
+  rename(Swimming="1",
+         Flying="2",
+         Submerged="3",
+         Breaching_surface="4",
+         Associated_with_platform="5",
+         Missing="0")%>%
+  mutate(Swimming = replace_na(Swimming, 0),
+         Flying= replace_na(Flying, 0),
+         Submerged= replace_na(Submerged, 0),
+         Breaching_surface= replace_na(Breaching_surface, 0),
+         Associated_with_platform= replace_na(Associated_with_platform, 0),
+         Missing= replace_na(Missing, 0)
+         )%>%
+  relocate(ENGLISH_NAME,Swimming,Flying,Submerged,Breaching_surface,Associated_with_platform)%>%
+  rename('Swimming'=Swimming,
+         'Flying'=Flying,
+         'Submerged'=Submerged,
+         'Breaching'=Breaching_surface,
+         'Association'=Associated_with_platform) 
+Activity_3df<-Activity_2df%>% 
+  select(-Missing)
+Activity_Table <- flextable(Activity_3df)
+# Set column widths manually (in inches)
+Activity_Table<- set_table_properties(Activity_Table, width = 1, layout = "autofit") %>%
+  width(j = 1, width = 2) %>%   
+  width(j = 2, width = 2) %>% 
+  width(j = 3, width = 2.5) 
+Activity_Table
+```
+
+
+## Missing
+
+```{r ActivityTableMissing,echo=FALSE}
+Activity_TableMissing <- Activity_2df %>% filter(Missing==TRUE)
+if (nrow(Activity_TableMissing) == 0) {
+  cat("Information from Activity was completly filled.\n")
+} else {
+cat("These species are missing Activity information:\n")
+Activity_TableMissing<- set_table_properties(Activity_TableMissing, width = 1, layout = "autofit") %>%
+  width(j = 1, width = 2) %>%   
+  width(j = 2, width = 2) %>% 
+  width(j = 3, width = 2.5)
+}
+```
+
+\newpage
+
+## Age class
+
+AGE_CLASS: Expected A- Adult, IM- Immature; AGE_YEARS: Expected numeric from 1 to 5. Missing refers to those immature individuals where age was not declared in AGE_YEARS. In birds, age can be determined by plumage. 
+
+```{r CheckAge,echo=FALSE}
+if ("IM" %in% Observations$AGE_CLASS==FALSE){
+  print("No table would be created as there is no IM information in the column AGE_CLASS")
+  }else{
+Age_table <- Observations %>%
+  drop_na(AGE_CLASS) %>%
+  group_by(ENGLISH_NAME, AGE_CLASS, AGE_YEARS) %>%
+  tally() %>%
+  pivot_wider(names_from = AGE_CLASS, values_from = n) %>%
+  select(ENGLISH_NAME, A, IM, AGE_YEARS)
+Age_table <- Age_table %>%
+  pivot_wider(
+    names_from = AGE_YEARS,
+    values_from = IM,
+    names_prefix = "IM_"
+  ) %>%
+  rename_with(~gsub("IM_NA", "Missing_YEARS", .x)) %>%
+  group_by(ENGLISH_NAME) %>%
+  summarise(across(everything(), ~sum(.x, na.rm = TRUE))) %>%
+  relocate(ENGLISH_NAME, A, starts_with("IM_"), Missing_YEARS)
+Age_table <- flextable(Age_table)
+# Set column widths manually (in inches)
+Age_table<- set_table_properties(Age_table, width = 1, layout = "autofit") 
+Age_table
+}
+```
+
+## Sex
+
+F for Females and M for Males. 
+Only retains species where this information was provided.
+
+```{r CheckSex,echo=FALSE}
+if (!any(c("F", "M") %in% Observations$SEX)) {
+  print("No table would be created as there is no F or M information in the column SEX")
+  }else{
+  Table_Sex<-Observations %>%
+    group_by(ENGLISH_NAME,SEX)%>%
+    tally()%>%
+    pivot_wider(names_from = SEX,values_from=n)%>%
+    mutate(
+      F = if (!"F" %in% colnames(.)) 0 else F,
+      M = if (!"M" %in% colnames(.)) 0 else M
+    ) %>%
+    select(ENGLISH_NAME, F, M)%>%
+    filter(!is.na(F) | !is.na(M))
+Table_Sex
+Table_Sex <- flextable(Table_Sex)
+Table_Sex<- set_table_properties(Table_Sex, width = 1, layout = "autofit") 
+Table_Sex
+} 
+```
+
+
+\newpage
+
+# Spatial distributions per morphological group
+
+All observation will be plotted by taxonomic/morphological group. **If you can not see all species is likely that is because they are overlapping, please refer to the dynamic maps to see the location of each species.** Dynamic maps are under the folder 03Maps. The name of the files correspond to the survey. There you can zoom in and out and click on the dots to get information on the species sighted. 
+
+```{r SpatialPlotAxis,echo=FALSE}
+y_start<-min(as.numeric(Plausability_Basis$LAT_PIC_CENTER), na.rm = TRUE)-0.5
+y_end<-max(as.numeric(Plausability_Basis$LAT_PIC_CENTER), na.rm = TRUE)+0.5
+x_start<-min(as.numeric(Plausability_Basis$LON_PIC_CENTER), na.rm = TRUE)-1
+x_end<-max(as.numeric(Plausability_Basis$LON_PIC_CENTER), na.rm = TRUE)+1
+```
+
+```{r SpatialPlotFunction, echo=FALSE}
+CheckGroup <- function(Morphological_group) {
+  SelectedBirds <- subset(Animals_1check, Artificial_tax_class == Morphological_group)
+  
+  if(nrow(SelectedBirds) == 0) {
+        print(paste("No",Morphological_group,"occurred in the survey, therefore there is nothing to be plotted"))
+   } else {
+          
+  SelectedBirds$lat<-as.numeric(SelectedBirds$LAT_OBJECT)
+  SelectedBirds$lon<-as.numeric(SelectedBirds$LON_OBJECT)
+  
+  SelectedBirds <- SelectedBirds[!is.na(SelectedBirds$lat) & !is.na(SelectedBirds$lon), ]
+  SelectedBirds_sf <- st_as_sf(SelectedBirds, coords = c("lon", "lat"),crs = 4326, agr = "constant")
+  
+  ggplot(data = SelectedBirds_sf) +
+    geom_sf(data = Study_areas,colour = 'black', alpha=0.1)+
+    geom_sf(data = Land, colour = 'black', fill = '#e5e5e5')+
+    
+    geom_point(data=SelectedBirds,aes(x=lon, y= lat, fill = ENGLISH_NAME), 
+             size=3, shape=21,color='black') +
+    
+    scale_fill_manual(values= c(
+      "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
+      "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
+      "#393b79", "#637939", "#8c6d31", "#843c39", "#7b4173",
+      "#3182bd", "#31a354", "#756bb1", "#636363", "#e6550d",
+      "#fd8d3c", "#fdae6b", "#fdd0a2", "#9ecae1", "#6baed6",
+      "#4292c6", "#2171b5", "#08519c", "#08306b", "#c7e9c0",
+      "#fa9fb5", "#a1d99b"
+))+
+    theme_bw()+
+    xlab('Longitude')+ylab('Latitude')+
+    theme(legend.text=element_text(size=20),
+          axis.text = element_text(size=20),
+          axis.title = element_blank())+
+    coord_sf(xlim = c(x_start, x_end), ylim = c(y_start, y_end), expand = FALSE)+
+    scale_x_continuous(labels = function(x) paste0(x, '\u00B0', "W")) +
+    scale_y_continuous(labels = function(x) paste0(x, '\u00B0', "N"))}
+}
+
+```
+
+## Birds
+### Gulls
+
+Species occurring in the survey
+
+```{r GullsMap, echo=FALSE, comment=NA,fig.width=14, fig.height=10}
+CheckGroup(Morphological_group="Gulls")
+```
+
+\newpage
+
+### Skuas
+Species occurring in the survey
+
+```{r SkuasMap, echo=F, comment=NA, fig.width=14, fig.height=10}
+CheckGroup(Morphological_group="Skuas")
+```
+
+\newpage
+
+### Gannets
+Species of occurring in the survey
+
+```{r GannetMap, echo=FALSE, eval=TRUE, fig.width=14, fig.height=10}
+CheckGroup(Morphological_group="Gannets_Swans")
+```
+
+\newpage
+
+### Auks
+Species  occurring in the survey
+
+```{r AuksMap, echo=FALSE,comment=NA, fig.width=14, fig.height=10}
+CheckGroup(Morphological_group='Auks')
+```
+
+\newpage
+
+### Terns
+
+Species occurring in the survey
+
+```{r TernsMap, echo=FALSE, comment=NA,fig.width=14, fig.height=10}
+CheckGroup(Morphological_group='Terns')
+```
+
+\newpage
+
+### Ducks and Shelducks
+
+Species of occurring in the survey
+
+```{r AnatidaeMap, echo=FALSE,comment=NA, fig.width=14, fig.height=10}
+CheckGroup(Morphological_group="Ducks_Shelducks")
+```
+
+\newpage
+
+### Geese and Swans
+Species occurring in the survey
+
+```{r GesseMap, echo=FALSE, eval=TRUE, fig.width=14, fig.height=10, comment=NA}
+CheckGroup(Morphological_group="Geese")
+```
+
+
+
+\newpage
+
+### Divers
+Species occurring in the survey
+
+```{r DiverMap, echo=FALSE, eval=TRUE, fig.width=14, fig.height=10, comment=NA}
+CheckGroup(Morphological_group='Divers')
+```
+
+\newpage
+
+### Grebes
+Species occurring in the survey
+
+```{r GrebesMap, echo=FALSE, comment=NA,fig.width=14, fig.height=10}
+CheckGroup(Morphological_group='Grebes')
+```
+
+\newpage
+
+### Waders
+Species occurring in the survey
+
+```{r WadersMap, echo=FALSE, comment=NA,fig.width=14, fig.height=10}
+CheckGroup(Morphological_group='Waders')
+```
+
+\newpage
+
+### Other seabird species
+Species occurring in the survey
+
+```{r SeabirdsMap, comment=NA,echo=FALSE, fig.width=14, fig.height=10}
+CheckGroup(Morphological_group='Other_seabirds')
+```
+
+\newpage
+
+## Marine mammals
+Species occurring in the survey
+
+```{r MammalsMap, echo=FALSE,comment=NA, fig.width=14, fig.height=10}
+CheckGroup(Morphological_group='Marine_mammals')
+```
+
+\newpage
+
+### Harbour porpoise
+
+Separated by age class.
+
+```{r PorpoiseMap, echo=FALSE,comment=NA, fig.width=14, fig.height=10}
+HarbourPorpoise <- Animals_1check %>% filter(OBSERVATION==63510)
+  if(nrow(HarbourPorpoise) == 0) {
+        print(paste("No Harbour porpoise occurred in the survey, therefore there is nothing to be plotted"))
+   } else {
+          
+  HarbourPorpoise$lat<-as.numeric(HarbourPorpoise$LAT_OBJECT)
+  HarbourPorpoise$lon<-as.numeric(HarbourPorpoise$LON_OBJECT)
+  
+  HarbourPorpoise <- HarbourPorpoise[!is.na(HarbourPorpoise$lat) & !is.na(HarbourPorpoise$lon), ]
+  HarbourPorpoise <-HarbourPorpoise %>%   replace_na(list(AGE_CLASS = "Unknown"))
+  HarbourPorpoise_sf <- st_as_sf(HarbourPorpoise, coords = c("lon", "lat"),crs = 4326, agr = "constant")
+  
+  ggplot(data = HarbourPorpoise_sf) +
+    geom_sf(data = Study_areas,colour = 'black', alpha=0.1)+
+    geom_sf(data = Land, colour = 'black', fill = '#e5e5e5')+
+    
+    geom_point(data=HarbourPorpoise,aes(x=lon, y= lat, color = AGE_CLASS, shape=AGE_CLASS), size=3) +
+    scale_shape_manual(values=c(16, 17, 3))+
+    scale_color_manual(values=c('#c1121f','#ffe100','#000000'))+
+    theme_bw()+
+    xlab('Longitude')+ylab('Latitude')+
+    theme(legend.text=element_text(size=20),
+          axis.text = element_text(size=20),
+          axis.title = element_blank())+
+    coord_sf(xlim = c(x_start, x_end), ylim = c(y_start, y_end), expand = FALSE)+
+    scale_x_continuous(labels = function(x) paste0(x, '\u00B0', "W")) +
+    scale_y_continuous(labels = function(x) paste0(x, '\u00B0', "N"))
+  }
+```
+
+\newpage
+
+## Other species
+
+Here, species that were not included in the previous classification. If there are species that should have been included, check that the spelling is identical as those in the Euring.
+
+```{r MissingMap, comment=NA,echo=FALSE, fig.width=14, fig.height=10}
+MissingBirds <- subset(Animals_1check, is.na(Artificial_tax_class))
+Other_species <- subset(Animals_1check, Artificial_tax_class == 'Other_species')
+MissingSpecies<-rbind(Other_species,MissingBirds)
+if(nrow(MissingSpecies) == 0) {
+        print(paste("No missing birds occurred in the survey, therefore there is nothing to be plotted"))
+   } else {
+          
+  MissingSpecies$lat<-as.numeric(MissingSpecies$LAT_OBJECT)
+  MissingSpecies$lon<-as.numeric(MissingSpecies$LON_OBJECT)
+  
+  MissingSpecies <- MissingSpecies[!is.na(MissingSpecies$lat) & !is.na(MissingSpecies$lon), ]
+  MissingSpecies_sf <- st_as_sf(MissingSpecies, coords = c("lon", "lat"),crs = 4326, agr = "constant")
+  
+  ggplot(data = MissingSpecies_sf) +
+    geom_sf(data = Study_areas,colour = 'black', alpha=0.1)+
+    geom_sf(data = Land, colour = 'black', fill = '#e5e5e5')+
+    
+    geom_point(data=MissingSpecies,aes(x=lon, y= lat, fill = ENGLISH_NAME), 
+             size=3, shape=21,color='black') +
+    
+    scale_fill_manual(values= c(
+      "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
+      "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
+      "#393b79", "#637939", "#8c6d31", "#843c39", "#7b4173",
+      "#3182bd", "#31a354", "#756bb1", "#636363", "#e6550d",
+      "#fd8d3c", "#fdae6b", "#fdd0a2", "#9ecae1", "#6baed6",
+      "#4292c6", "#2171b5", "#08519c", "#08306b", "#c7e9c0",
+      "#fa9fb5", "#a1d99b"))+
+    theme_bw()+
+    xlab('Longitude')+ylab('Latitude')+
+    theme(legend.text=element_text(size=20),
+          axis.text = element_text(size=20),
+          axis.title = element_blank())+
+    coord_sf(xlim = c(x_start, x_end), ylim = c(y_start, y_end), expand = FALSE)+
+    scale_x_continuous(labels = function(x) paste0(x, '\u00B0', "W")) +
+    scale_y_continuous(labels = function(x) paste0(x, '\u00B0', "N"))
+  }
+```
+
+ ***End of the document. ***
