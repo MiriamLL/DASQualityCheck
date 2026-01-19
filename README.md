@@ -6,7 +6,7 @@
 This repository includes the parametrized script to run Quality Checks
 for digital survey data in R.
 
-Includes: <br> - **QualityCheck.Rproj** — RStudio project file <br> -
+Includes: <br> - **DASQualityCheck.Rproj** — RStudio project file <br> -
 **00QualityCheck.Rmd** — Initial quality check script <br> -
 **01FormalCheckandDataValidation.Rmd** — Formal checks and data
 validation<br> - **02PlausabilityCheck.Rmd** — Plausibility checks<br> -
@@ -14,7 +14,7 @@ validation<br> - **02PlausabilityCheck.Rmd** — Plausibility checks<br> -
 
 # Installation
 
-Download or Fork from <https://github.com/MiriamLL/QualityCheck>
+Download or Fork from <https://github.com/MiriamLL/DASQualityCheck>
 
 <img src="Images/Fork_1example.png" width="100%" />
 
@@ -38,8 +38,8 @@ install.packages("sp") #for reading shapefiles
 install.packages("sf") #for plotting shapefiles
 
 install.packages("devtools")
-devtools::install_github("MiriamLL/GermanNorthSea") #for loading shapefiles
-devtools::install_github("MiriamLL/seamonas") #for accessing Euring and Artificial_tax_group information
+devtools::install_github("MiriamLL/DASShapefiles") #for loading shapefiles
+devtools::install_github("MiriamLL/DASDescriptions") #for accessing Euring and Artificial_tax_group information
 
 #For Dinamic maps 
 install.packages("tmap") #for creating maps with layers
@@ -225,7 +225,7 @@ the following warning is displayed.
 
 <img src="Images/FormalCheck_Warning_ScreenShot.png" width="100%" />
 
-English names are often not standardize.
+English names often need standardization.
 
 <img src="Images/FormalCheck_Names_ScreenShot.png" width="100%" />
 
@@ -266,8 +266,8 @@ In Basis, renamed `POSITION ID_CONTROLLED` with POSITION_ID_CONTROLLED (added un
 In Observations, renamed Observation_ID with OBSERVATION_ID, renamed ENGLISH_NAME_BEFORE CONTROL with ENGLISH_NAME_BEFORE_CONTROL, and Group_ with GROUP'
 ```
 
-Name mismatches often occur due to missing spaces between slashes or
-omitted words.
+Name mismatches often occur due to differences in capital letters used,
+missing spaces between slashes, or omitted words.
 
 ``` r
 Observations <- Observations %>%
@@ -279,8 +279,6 @@ Observations <- Observations %>%
                        ENGLISH_NAME=='Unidentified gull'~'unidentified gull',
                        ENGLISH_NAME=='Harbour porpoise'~'Harbour Porpoise',
                        ENGLISH_NAME=='Northern fulmar'~'Northern Fulmar',
-                       # Wrong code
-                       ENGLISH_NAME=='Common Guillemot'~'Common Guillemot/Razorbill',
                        # Space between names
                        ENGLISH_NAME=='Common guillemot / Razorbill'~'Common Guillemot/Razorbill',
                        # Missing words
@@ -304,15 +302,17 @@ expected to be a minimum of 70%.<br> - `AREA_ANALYSED` and
 minimum of 20%. <br> - `ID_CONTROLLED`: The number of controlled
 sightings must at least reach 20% of all sightings.<br>
 
-**Basis**:<br> - `DATE`: Must be presented as YYYYMMDD to automatically
-extract the month and classify the season.<br> - `LAT_PIC_CENTER`:
-Column name must fit to automatically create the survey effort
-maps.<br> - `LON_PIC_CENTER`: Column name must fit to automatically
-create the survey effort maps.<br> - `GLARE`: Some variation is
-expected.<br> - `SEASTATE`: Some variation is expected.<br> -
-`TURBIDITY`: Some variation is expected.<br> - `CLARITY`: Some variation
-is expected.<br> - `PIC_QUALITY`: Some variation is expected. Percentage
-of good quality pictures is expected to be above 80%. <br>
+**Basis**:<br> - `DATE`: Must be presented as YYYYMMDD. This format is
+important to automatically extract the month based on the position, and
+use the number extracted to classify the season. <br> -
+`LAT_PIC_CENTER`: Column name must fit to automatically create the
+survey effort maps.<br> - `LON_PIC_CENTER`: Column name must fit to
+automatically create the survey effort maps.<br> - `GLARE`: Some
+variation is expected.<br> - `SEASTATE`: Some variation is
+expected.<br> - `TURBIDITY`: Some variation is expected.<br> -
+`CLARITY`: Some variation is expected.<br> - `PIC_QUALITY`: Some
+variation is expected. Percentage of good quality pictures is expected
+to be above 80%. <br>
 
 **Observations:**<br> - `ABIOTIC_STRUCTURES`: Can be left blank if no
 ABIOTIC_STRUCTURES were detected.<br> - `ABIOTIC_OBSERVATIONS`: Can be
@@ -411,8 +411,8 @@ to view the position ID and species information.<br>
 
 Please consider citing this repository.
 
-Lerma, M., Schwemmer, H., Nachtsheim, D. (2025). QualityCheck. GitHub.
-<https://github.com/MiriamLL/QualityCheck>
+Lerma, M., Schwemmer, H., Nachtsheim, D. (2025). DASQualityCheck.
+GitHub. <https://github.com/MiriamLL/DASQualityCheck>
 
 Additional references:
 
