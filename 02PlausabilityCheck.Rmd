@@ -100,7 +100,8 @@ Table_Areas
 States the analysed area and the percentage of that area subject to screening control (must be >20%).
 
 ```{r TableControlled, echo=FALSE, eval=TRUE}
-Table_Controlled <- data.frame(survey_dates = as.character(Plausability_Trip$DATE),
+if ("AREA_CONTROLLED" %in% colnames(TripDaten)) {
+    Table_Controlled <- data.frame(survey_dates = as.character(Plausability_Trip$DATE),
                           area_analysed = as.numeric(Plausability_Trip$AREA_ANALYSED),
                           area_controlled= as.numeric(Plausability_Trip$AREA_CONTROLLED),
                           area_controlled_prop =  NA)%>%
@@ -119,6 +120,9 @@ Table_Controlled<- set_table_properties(Table_Controlled, width = 1, layout = "a
   width(j = 4, width = 2) %>% 
   width(j = 5, width = 2) 
 Table_Controlled
+}else{  
+            print("The column AREA_CONTROLLED is missing in TripDaten")
+  }
 ```
 
 
@@ -154,6 +158,10 @@ Protected_natura <- st_transform(DASShapefiles::DE_natura,4326)
 Basis_df<-fortify(Plausability_Basis)
 Basis_df$lat<-as.numeric(Basis_df$LAT_PIC_CENTER)
 Basis_df$lon<-as.numeric(Basis_df$LON_PIC_CENTER)
+minlon<-min(Basis_df$lon)-1
+minlat<-min(Basis_df$lat)-1
+maxlon<-max(Basis_df$lon)+1
+maxlat<-max(Basis_df$lat)+1
 Basis_df <- Basis_df[!is.na(Basis_df$lat) & !is.na(Basis_df$lon), ]
 Basis_sf <- st_as_sf(Basis_df, coords = c("lon", "lat"),crs = 4326, agr = "constant")
 
@@ -169,7 +177,7 @@ ggplot(data = Basis_sf) +
                 aes(x = lon, y = lat), 
                 size = 1, shape = 21, colour = "#9d0208")+
   geom_sf(data = Land, colour = 'black', fill = '#e5e5e5')+
-  coord_sf(xlim = c(3, 15), ylim = c(53, 56), expand = FALSE)+
+  coord_sf(xlim = c(minlon, maxlon), ylim = c(minlat, maxlat), expand = FALSE)+
   theme_bw()+
   xlab('Longitude')+ylab('Latitude')+
   theme(axis.text = element_text(size=6),
@@ -390,11 +398,13 @@ Controlled_Observations <-Controlled_Observations %>%
          number_of_sightings=n)
 
 # Number of controlled sightings, from Trip
-Controlled_Ids<- Plausability_Observations %>%
+if ("ID_MATCH_MISMATCH" %in% colnames(Plausability_Observations)) {
+  Controlled_Ids<- Plausability_Observations %>%
   group_by(ID_MATCH_MISMATCH)%>%
   tally()
 Controlled_Ids<- Controlled_Ids[2,2]+Controlled_Ids[1,2]
 Controlled_Ids <- Controlled_Ids %>% rename(number_of_controlled_sightings=n)
+
 
 # Difference between match and mismatch
 Controlled_Ids_Difference<-Plausability_Observations %>%
@@ -402,38 +412,54 @@ Controlled_Ids_Difference<-Plausability_Observations %>%
   tally()
 Controlled_Difference <- Controlled_Ids_Difference$n[2]*100/ (Controlled_Ids_Difference$n[1]+Controlled_Ids_Difference$n[2])
 Controlled_Difference
+}else{  
+            print("The column ID_MATCH_MISMATCH is missing in Observations, the percentage of controlled sightings can not be calculated")
+  }
 ```
 
 ```{r ControlledIDTable, echo=FALSE, include=FALSE}
-Controlled_Observations_Table<-cbind(Controlled_Observations,Controlled_Ids)
+if ("ID_MATCH_MISMATCH" %in% colnames(Plausability_Observations)) {Controlled_Observations_Table<-cbind(Controlled_Observations,Controlled_Ids)
 Controlled_Observations_Table<- Controlled_Observations_Table %>% 
   mutate(Id_controlled_difference=Controlled_Difference)%>%
   mutate(percentaje_of_controlled=number_of_controlled_sightings*100/number_of_sightings)%>%
   mutate(percentaje_of_controlled=round(percentaje_of_controlled,2))
 Controlled_Observations_Table 
+}else{  
+            print("The column ID_MATCH_MISMATCH is missing in Observations, the percentage of controlled sightings can not be calculated")
+  }
 ```
 
 ```{r Controlled_Table, echo=FALSE}
-Controlled_Table<-Controlled_Observations_Table  %>%
+if ("ID_MATCH_MISMATCH" %in% colnames(Plausability_Observations)) {Controlled_Table<-Controlled_Observations_Table  %>%
   relocate(survey_dates_YYYYMMDD,
            number_of_sightings,
            number_of_controlled_sightings,
            Id_controlled_difference,
            percentaje_of_controlled)
+}else{
+  print("The column ID_MATCH_MISMATCH is missing in Observations, the percentage of controlled sightings can not be calculated")
+  }
 ```
 
 ```{r ControlledTableNames,echo=FALSE}
-names(Controlled_Table)<- c("survey dates (YYYYMMDD)",
+if ("ID_MATCH_MISMATCH" %in% colnames(Plausability_Observations)) {
+  names(Controlled_Table)<- c("survey dates (YYYYMMDD)",
                            "number of sightings",
                            "number of controlled sightings",
                            "difference between first ID and control [%]",
                            "percentage of controlled sightings [%]")
+}else{
+  print("The column ID_MATCH_MISMATCH is missing in Observations, the percentage of controlled sightings can not be calculated")
+  }
 ```
 
 ```{r ControlledTableKnitr, echo=FALSE, eval=TRUE}
-Controlled_Table<- flextable(Controlled_Table)
+if ("ID_MATCH_MISMATCH" %in% colnames(Plausability_Observations)) {
+  Controlled_Table<- flextable(Controlled_Table)
 Controlled_Table <- set_table_properties(Controlled_Table, width = 1, layout = "autofit")
-Controlled_Table
+Controlled_Table}else{
+  print("The column ID_MATCH_MISMATCH is missing in Observations, mismatches can not be calculated")
+  }
 ```
 
 
@@ -576,13 +602,18 @@ The selection of images for inspection should be random. The persons in the scre
 At the ID control level, care must be taken to ensure that the controls include as many species and taxonomic groups as possible.  
 
 ```{r AuditedObservations, echo=F, fig.width=10, fig.height=4.5, warning=FALSE}
-# Replace zeros
+if ("ID_MATCH_MISMATCH" %in% colnames(Plausability_Observations)) {
+  # Replace zeros
 Audited_1check<-Plausability_Observations%>%
   mutate(ID_MATCH_MISMATCH = replace_na(ID_MATCH_MISMATCH, "0"))
+}else{
+  print("The column ID_MATCH_MISMATCH is missing in Observations,the number of audited species asignation can not be calculated")
+  }
 ```
 
 ```{r AuditedObservationsClass, echo=F, fig.width=10, fig.height=4.5, warning=FALSE}
-if ("OBSERVATION_ID" %in% colnames(Audited_1check)) {
+if ("ID_MATCH_MISMATCH" %in% colnames(Plausability_Observations)) {
+  if ("OBSERVATION_ID" %in% colnames(Audited_1check)) {
   Audited_1check <- Audited_1check[order(as.numeric(Audited_1check$OBSERVATION_ID)), ]
   cat("The column OBSERVATION_ID will be used\n")
 
@@ -624,12 +655,16 @@ ggplot(data=Audited_1check,aes(x=OBSERVATION_ID,y=as.numeric(ID_MATCH_MISMATCH))
   theme(axis.text.x = element_text(angle=90,size=8))+
   NULL
 }
+}else{
+  print("The column ID_MATCH_MISMATCH is missing in Observations, the differences in matches can not be plotted")
+  }
 ```
 
 Shows the proportion of animal identification that were matched the initial identification.
 
 ```{r CheckMismatch, echo=FALSE}
-if ("2" %in% Plausability_Observations$ID_MATCH_MISMATCH==FALSE){
+if ("ID_MATCH_MISMATCH" %in% colnames(Plausability_Observations)) {
+  if ("2" %in% Plausability_Observations$ID_MATCH_MISMATCH==FALSE){
     print("Missing 2 in ID_MATCH_MISMATCH, errors in identification can not be calculated")
   }else{
 Table_Identification<-Observations %>%
@@ -653,6 +688,9 @@ Table_Identification<- set_table_properties(Table_Identification, width = 1, lay
   width(j = 3, width = 2) 
 # Print table 
 Table_Identification}
+}else{
+  print("The column ID_MATCH_MISMATCH is missing in Observations, groups or species with higher rate of misidentification can not be calculated")
+  }
 ```
 
 ## Mismatch
@@ -660,7 +698,8 @@ Table_Identification}
 How many animals were first **misidentified**?
 
 ```{r, echo=FALSE}
-if ("2" %in% Audited_1check$ID_MATCH_MISMATCH==FALSE){
+if ("ID_MATCH_MISMATCH" %in% colnames(Plausability_Observations)) {
+  if ("2" %in% Audited_1check$ID_MATCH_MISMATCH==FALSE){
     print("Missing 2 in ID_MATCH_MISMATCH, errors in identification can not be calculated")
   }else{
 Audited_2check<-Audited_1check %>%
@@ -686,7 +725,10 @@ Table_biases<- set_table_properties(Table_biases, width = 1, layout = "autofit")
   width(j = 3, width = 2) 
 # Print table 
 Table_biases
-}
+  }
+}else{
+  print("The column ID_MATCH_MISMATCH is missing in Observations, groups or species with higher rate of misidentification can not be calculated")
+  }
 ```
 
 \newpage
@@ -696,7 +738,8 @@ Table_biases
 Are there any species that require revision due to frequent misidentification? If so, consider conducting a reevaluation. For example, that the errors were more frequent than the matches. 
 
 ```{r, echo=FALSE}
-if ("2" %in% Audited_1check$ID_MATCH_MISMATCH==FALSE){
+if ("ID_MATCH_MISMATCH" %in% colnames(Plausability_Observations)) {
+  if ("2" %in% Audited_1check$ID_MATCH_MISMATCH==FALSE){
     print("Missing 2 in ID_MATCH_MISMATCH, biases can not be calculated")
   }else{
 Audited_7check<-Audited_5check %>%
@@ -706,13 +749,17 @@ Audited_7check<-Audited_5check %>%
 Audited_7check<- flextable(Audited_7check)
 Audited_7check<- set_table_properties(Audited_7check, width = 1, layout = "autofit") 
 Audited_7check}
+}else{
+  print("The column ID_MATCH_MISMATCH is missing in Observations, groups or species with higher rate of misidentification can not be calculated")
+  }
 ```
 
 
 Ensure that there is no observer bias, such as when a large number of individuals from one species are consistently misidentified.
 
 ```{r MissMatchPlot, echo=F,fig.width=10, fig.height=10}
-if ("2" %in% Audited_1check$ID_MATCH_MISMATCH==FALSE){
+if ("ID_MATCH_MISMATCH" %in% colnames(Plausability_Observations)) {
+  if ("2" %in% Audited_1check$ID_MATCH_MISMATCH==FALSE){
     print("Missing 2 in ID_MATCH_MISMATCH, plot can not be created")
   }else{
   Audited_6check<-Audited_5check %>% 
@@ -732,7 +779,10 @@ if ("2" %in% Audited_1check$ID_MATCH_MISMATCH==FALSE){
         axis.text.x = element_text(size=10),
         axis.text.y = element_text(size=10),
         legend.position='top')
-}
+  }
+}else{
+  print("The column ID_MATCH_MISMATCH is missing in Observations, groups or species with higher rate of misidentification can not be plotted")
+  }
 ```
 
 
@@ -746,7 +796,8 @@ Gives insights on the proportion of missed animals during the screening process.
 By definition 0 = No screening control, 1 = Only on screening, 2 = Only on control, 3 = Screening and Control (Agreement), 4 = Detected in ID, 5 = Detected in ID control.
 
 ```{r TableDetectionDefinitions, echo=FALSE}
-Screening_1check<-Plausability_Observations %>%
+if ("DETECTION_STEP" %in% colnames(Plausability_Observations)) {
+  Screening_1check<-Plausability_Observations %>%
     mutate(SCREENING=case_when(DETECTION_STEP == 1 ~ 'DETECTED_1SCREENING',
                                DETECTION_STEP == 2 ~ 'DETECTED_2CONTROL',
                                DETECTION_STEP == 3 ~ 'DETECTED_3AGREEMENT',
@@ -761,10 +812,14 @@ Screening_2check<-Screening_1check %>%
 
 Screening_3check<-Screening_2check %>%
   pivot_wider(names_from=SCREENING, values_from=n) 
+}else{
+  print("The column DETECTION_STEP is missing in Observations")
+  }
 ```
 
 ```{r Detection_Table, echo=FALSE}
-Detection_Table<-Screening_3check %>%
+if ("DETECTION_STEP" %in% colnames(Plausability_Observations)) {
+  Detection_Table<-Screening_3check %>%
   mutate(Proportion_reviewed=(DETECTED_1SCREENING+DETECTED_2CONTROL+DETECTED_3AGREEMENT)*100/
            (DETECTED_1SCREENING+DETECTED_2CONTROL+DETECTED_3AGREEMENT+NOT_CHECKED))%>%
   mutate(Proportion_reviewed=round(Proportion_reviewed,2))%>%
@@ -782,6 +837,9 @@ Table_Detection<- flextable(Detection_Table)
 Table_Detection<- set_table_properties(Table_Detection, width = 1, layout = "autofit") 
 # Print table 
 Table_Detection
+}else{
+  print("The column DETECTION_STEP is missing in Observations")
+  }
 ```
 
 
@@ -793,7 +851,8 @@ Since the screener and the auditor are assigned randomly and therefore interchan
 Assuming 20% of the area audited, the efficiency for this 20% is defined as db = (M+C-R)/N. If the efficiency of the entire process is to be calculated then rl = (dc*0.2)+(sc*0.8).  However, the actual number of animals remains unknown and therefore the number of missed animals is underestimated . 
 
 ```{r TableFormulaDetection, echo=FALSE}
-FormulaDetection_Table<-Detection_Table %>%
+if ("DETECTION_STEP" %in% colnames(Plausability_Observations)) {
+  FormulaDetection_Table<-Detection_Table %>%
   dplyr::select(Screener,Reviewer,Agreement)%>%
   rename(m=Screener,
          c=Reviewer,
@@ -815,10 +874,14 @@ FormulaDetection_Table<-Detection_Table %>%
          dc=round(dc,2),
          rl=round(rl,2))%>%
   dplyr::select(M,C,R,N,s,a,sc,dc,rl)
+}else{
+  print("The column DETECTION_STEP is missing in Observations")
+  }
 ```
 
 ```{r TableFormulaDetectionKnitr, echo=FALSE}
-Table_FormulaDetection <- flextable(FormulaDetection_Table)
+if ("DETECTION_STEP" %in% colnames(Plausability_Observations)) {
+  Table_FormulaDetection <- flextable(FormulaDetection_Table)
 # Set column widths manually (in inches)
 Table_FormulaDetection<- set_table_properties(Table_FormulaDetection, width = 1, layout = "autofit") %>%
   width(j = 1, width = 2) %>%   # column 1 = 2 inches
@@ -826,6 +889,9 @@ Table_FormulaDetection<- set_table_properties(Table_FormulaDetection, width = 1,
   width(j = 3, width = 1.2)     # etc.
 # Print table 
 Table_FormulaDetection
+}else{
+  print("The column DETECTION_STEP is missing in Observations")
+  }
 ```
 
 
