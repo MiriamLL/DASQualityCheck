@@ -19,7 +19,7 @@ The present document imports and explores the data provided.
 
 In this document you will find:  
 1. Revision of **control steps**. Including Area observed, Area controlled.  
-2. Revision of **survey area**. Including a map of the surveyed area.
+2. Revision of **survey area**. Including a map of the surveyed area.  
 3. Revision of **environmental conditions**. Visualization of environmental conditions during the survey.  
 4. Revision of **Observations**. Including species list, check that the codes correspond to the species name, check the proportion of birds and mammals, check the most common species observed during the survey. Check errors in identifications.  
 5. Revision of **Plausibility** in the columns Activity, Age class and Sex.  
@@ -54,7 +54,7 @@ Plausability_Observations<-Observations
 
 ## Survey info
 
-Surveys must avoid noon due to problems with glare. Condition is that the transect width must be at least 400 m.
+Surveys must avoid noon due to problems with glare. Check start and end time of the survey. Also, check that the transect width is at least 400 m.
 
 ```{r TableStripWidth, echo=FALSE}
 Table_Survey<-Plausability_Trip %>%
@@ -97,9 +97,7 @@ Table_Areas
 
 ## Area controlled
 
-What was the **area analysed** and the **area controlled** (i.e. area controlled during the screening control) in relation to the area analysed?
-
-Area controlled should be > 20%. 
+States the analysed area and the percentage of that area subject to screening control (must be >20%).
 
 ```{r TableControlled, echo=FALSE, eval=TRUE}
 Table_Controlled <- data.frame(survey_dates = as.character(Plausability_Trip$DATE),
@@ -291,7 +289,7 @@ PlotConditions(EjeY=as.numeric(Plausability_Basis$CLARITY))+
 
 ## Picture quality
 
-What is the proportion of pictures that had **good quality**.  Is expected to be above 80%. 
+Proportion of good-quality pictures (%), expected >80%.
 
 ```{r TablePicture, echo=FALSE,eval=TRUE}
 FlightName<-unique(Plausability_Basis$CRUISENO)
@@ -497,7 +495,7 @@ Abiotic_Observations
 
 ```{r AbioticObservations, echo=FALSE, comment=NA, message=FALSE}
 #Create a column with mammal or birds
-sprintf("Note: %d abiotic structures and abiotic observations that will not be included in the next steps",length(which(is.na(Plausability_Observations$OBSERVATION))))
+sprintf("Note: %d abiotic structures and abiotic observations will not be included in the next steps",length(which(is.na(Plausability_Observations$OBSERVATION))))
 ```
 \newpage
 
@@ -945,7 +943,7 @@ ggplot(Mammals_5check, aes(x=paste(str_pad(OBSERVATION, 6, pad = "0"),
 
 ### Other species
 
-Includes terrestrial birds, fish, sharks and some animals names are probably misspelled and could be corrected (either in the quality check or in the excel sheet), and therefore included.
+The “other species” category includes terrestrial birds, fish, and sharks. It can potentially include animals with misspelled names that could not be assigned to a category, but this can be corrected earlier during the quality check or in the Excel file.
 
 ```{r MissingSightingsPlot, echo=FALSE, fig.height=10, fig.width=8}
 Missing_4check<-Animals_1check %>% filter(Taxa=="Others")
